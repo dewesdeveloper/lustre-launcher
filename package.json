@@ -2,8 +2,8 @@
   "name": "lustre-frontend",
   "productName": "Lustre",
   "private": true,
-  "version": "0.1.0",
-  "releaseName": "Public 0.1",
+  "version": "0.1.2",
+  "releaseName": "Public 0.1.2",
   "license": "GPL-3.0-or-later",
   "author": "DewesDeveloper",
   "description": "Lustre desktop app",
@@ -122,8 +122,8 @@
     ],
     "publish": {
       "provider": "github",
-      "owner": "DewesDeveloper",
-      "repo": "LustreHub-releases",
+      "owner": "dewesdeveloper",
+      "repo": "lustre-launcher",
       "releaseType": "release"
     },
     "extraFiles": [

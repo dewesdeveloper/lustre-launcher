@@ -2040,9 +2040,23 @@ async function installDownloadedUpdate() {
   autoUpdater.quitAndInstall(true, true) // тихая установка + автозапуск новой версии
 }
 
+// Сборка для персонала (с закрытым модулем админки) обновляется из своего канала:
+// scripts/release.cjs кладёт её рядом с публичной как staff.yml, публичная читает latest.yml
+function buildFlavor() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(app.getAppPath(), 'package.json'), 'utf8')).lustreFlavor || 'public'
+  } catch {
+    return 'public'
+  }
+}
+
 function initAutoUpdates() {
   if (!app.isPackaged) return
   checkSelfUpdateResult()
+  if (buildFlavor() === 'staff') {
+    autoUpdater.channel = 'staff'
+    autoUpdater.allowDowngrade = false // установка channel включает его, откат версии не нужен
+  }
   autoUpdater.autoDownload = true          // найденная версия качается сразу
   autoUpdater.autoInstallOnAppQuit = false // ставим сами, после отсчёта в окне обновления
 

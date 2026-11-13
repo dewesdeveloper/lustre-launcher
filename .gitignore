@@ -53,3 +53,4 @@ src/api/admin.ts
 
 # Макеты дизайна — только локально, в открытый код и сборки не входят
 design/
+.release-private-stash/
