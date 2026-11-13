@@ -1,0 +1,20 @@
+/* ============================================================
+   LUSTRE — минималистичные переходы между страницами
+   Логика — components/PageTransition.tsx (Web Animations API):
+   новая страница сразу на месте и коротко проявляется в области
+   контента. Здесь — только неоновая линия варианта «Луч» (a4).
+   ============================================================ */
+
+.pageTrans-line {
+  position: fixed; left: 0; top: 0; width: 100vw; height: 2px;
+  z-index: 99999; pointer-events: none; opacity: 0;
+  background: linear-gradient(90deg, transparent, var(--color-accent, #ff2d8f) 20%, var(--color-cyan, #22d3ee) 80%, transparent);
+  box-shadow: 0 0 10px rgb(var(--accent-rgb, 255 45 143) / .8), 0 0 2px #fff;
+  transform: scaleX(0);
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pageTrans-line { display: none; }
+}
+.simple-mode .pageTrans-line { display: none; }

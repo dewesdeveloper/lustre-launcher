@@ -1,0 +1,95 @@
+/* Окно сообщений в стиле Telegram, но в дизайн-системе TL (прямые углы, 1px, неон). */
+
+.lc-feed {
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(to right, rgb(var(--accent-rgb) / .045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(var(--accent-rgb) / .045) 1px, transparent 1px),
+    radial-gradient(circle at 80% 10%, rgb(var(--violet-rgb) / .10), transparent 45%),
+    radial-gradient(circle at 10% 90%, rgb(var(--accent-rgb) / .08), transparent 45%);
+  background-size: 32px 32px, 32px 32px, 100% 100%, 100% 100%;
+  background-attachment: local, local, scroll, scroll;
+}
+
+/* --- пузыри --- */
+.lc-bubble {
+  position: relative;
+  border: 1px solid transparent;
+  border-radius: var(--tl-radius);
+  transition: box-shadow .15s, border-color .15s, background-color .15s;
+}
+.lc-bubble.in {
+  background: var(--panel2);
+  border-color: rgb(255 255 255 / .07);
+}
+.lc-bubble.out {
+  background: rgb(var(--accent-rgb) / .17);
+  border-color: rgb(var(--accent-rgb) / .38);
+}
+.lc-bubble.media { background: transparent; border-color: transparent; }
+.lc-bubble.media.has-extra.in { background: var(--panel2); border-color: rgb(255 255 255 / .07); }
+.lc-bubble.media.has-extra.out { background: rgb(var(--accent-rgb) / .17); border-color: rgb(var(--accent-rgb) / .38); }
+
+/* «хвостик» у последнего сообщения стопки — пиксельный уголок */
+.lc-bubble.tail.in::after,
+.lc-bubble.tail.out::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  width: 7px;
+  height: 7px;
+}
+.lc-bubble.tail.in::after {
+  left: -7px;
+  background: linear-gradient(to bottom right, transparent 50%, var(--panel2) 50%);
+  border-bottom: 1px solid rgb(255 255 255 / .07);
+}
+.lc-bubble.tail.out::after {
+  right: -7px;
+  background: linear-gradient(to bottom left, transparent 50%, rgb(var(--accent-rgb) / .17) 50%);
+  border-bottom: 1px solid rgb(var(--accent-rgb) / .38);
+}
+.lc-bubble.tail.in { border-bottom-left-radius: 0; }
+.lc-bubble.tail.out { border-bottom-right-radius: 0; }
+.lc-bubble.media.tail::after { display: none; }
+
+.lc-bubble.selected {
+  border-color: var(--pink);
+  box-shadow: 0 0 0 1px var(--pink), var(--glow-sm);
+}
+
+/* подсветка при переходе к сообщению */
+@keyframes lc-flash {
+  0%, 30% { box-shadow: 0 0 0 2px var(--pink), 0 0 18px rgb(var(--accent-rgb) / .7); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.lc-row.flash .lc-bubble,
+.lc-row.flash .lc-emoji { animation: lc-flash 1.6s ease-out; }
+
+/* мета (время/галочки) — место под неё в конце текста */
+.lc-meta-spacer { display: inline-block; height: 1px; vertical-align: bottom; }
+
+/* плавающие кнопки возле пузыря */
+.lc-row .lc-hover { opacity: 0; pointer-events: none; transition: opacity .12s; }
+.lc-row:hover .lc-hover { opacity: 1; pointer-events: auto; }
+
+/* дата — «прилипает» к верху ленты */
+.lc-day { position: sticky; top: 8px; z-index: 5; }
+
+/* перетаскивание файлов */
+.lc-drop {
+  background: rgb(6 3 9 / .82);
+  outline: 2px dashed var(--line-2);
+  outline-offset: -14px;
+}
+
+/* поле ввода: textarea растёт до N строк. Без scrollbar-width: в Chromium оно отключает
+   стили ::-webkit-scrollbar (custom-scrollbar) и полоса становилась системной */
+.lc-composer-input {
+  resize: none;
+  max-height: 168px;
+  overflow-y: hidden;
+}
+
+@keyframes lc-pop { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.lc-pop { animation: lc-pop .14s ease-out; }

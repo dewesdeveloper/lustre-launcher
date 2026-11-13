@@ -1,0 +1,55 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+dist-web
+lustre-web.tar.gz
+release
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# сборка тестов
+scripts/*.bundle.mjs
+scripts/*.bundle.js
+
+# Внутренняя техдокументация — не публикуется в репозитории
+docs/TECHNICAL.md
+
+# Локальные ключи (GH_TOKEN) и бинарники для дистрибутива (extraResources)
+config.env
+vendor/*
+!vendor/README.md
+
+# Сгенерированные тестовые страницы (абсолютные пути машины разработчика)
+scripts/dev/*.html
+scripts/*.html
+scripts/dev/*.bundle.*
+scripts/*.bundle.*
+
+# Локальные настройки выкатки (адрес сервера)
+scripts/deploy.local.json
+
+# Админка — закрытый модуль (приватный репозиторий LustreAdmin, npm run admin:pull)
+src/pages/admin/
+src/api/admin.ts
+
+# Макеты дизайна — только локально, в открытый код и сборки не входят
+design/

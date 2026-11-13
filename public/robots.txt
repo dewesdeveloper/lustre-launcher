@@ -1,0 +1,24 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /add-game
+Disallow: /edit-game
+Disallow: /moderation
+Disallow: /settings
+Disallow: /reset-password
+Disallow: /payment
+Disallow: /library
+Disallow: /downloads
+Disallow: /friends
+Disallow: /inventory
+Disallow: /activity
+Disallow: /appearance
+Disallow: /profile/edit
+Disallow: /support/manage
+Disallow: /community/invite
+Disallow: /overlay
+Disallow: /chat-window
+Disallow: /friends-window
+Disallow: /account-picker
+
+Sitemap: https://lustrehub.pro/sitemap.xml
