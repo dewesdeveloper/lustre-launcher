@@ -141,7 +141,13 @@ contextBridge.exposeInMainWorld('electron', {
     return () => ipcRenderer.removeListener('torrent-updates', handler);
   },
   // Installation
-  installGame: (id) => ipcRenderer.invoke('install-game', id),
+  installGame: (id, opts) => ipcRenderer.invoke('install-game', id, opts),
+  // итог проверки Защитником Windows после скачивания (уходит в каталог для других игроков)
+  onScanResult: (cb) => {
+    const handler = (_e, r) => cb(r);
+    ipcRenderer.on('scan-result', handler);
+    return () => ipcRenderer.removeListener('scan-result', handler);
+  },
   installedGames: () => ipcRenderer.invoke('installed-games'),
   launchGame: (id) => ipcRenderer.invoke('launch-game', id),
   pickGameExe: () => ipcRenderer.invoke('pick-exe'),

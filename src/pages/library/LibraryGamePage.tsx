@@ -2,8 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Play, Loader2, FolderSearch, MonitorSmartphone,
-  Building2, Calendar, Shield, Clock, Tag
-} from 'lucide-react';
+  Building2, Calendar, Shield, Clock, Tag, ShieldCheck } from 'lucide-react';
 import api from '../../api';
 import { useDialog } from '../../components/Dialogs';
 import { notifyLibraryChanged } from '../../utils/libraryEvents';
@@ -22,6 +21,8 @@ import { gameBannerUrl, gameBannerFallback } from '../../utils/gameBanner';
 import { formatPlaytime } from '../../utils/playtime';
 import { safeHtml } from '../../utils/safeHtml';
 import { reportDownload } from '../../api/downloadStats';
+import { sourceKeyFor } from '../../api/scanReports';
+import VirusCheckModal from './components/VirusCheckModal';
 
 const tokenize = (s: string) =>
   new Set(s.toLowerCase().split(/[^a-z0-9а-яё]+/).filter(t => t.length >= 3));
@@ -66,6 +67,7 @@ export default function LibraryGamePage() {
   const [shortcutMsg, setShortcutMsg] = useState('');
   const [installing, setInstalling] = useState(false);
   const [installError, setInstallError] = useState('');
+  const [virusCheckOpen, setVirusCheckOpen] = useState(false);
   const [sourcePickerOpen, setSourcePickerOpen] = useState(false);
   const [itchFiles, setItchFiles] = useState<ItchFile[]>([]);
   const [itchLoading, setItchLoading] = useState(false);
@@ -249,6 +251,8 @@ export default function LibraryGamePage() {
             gameId: Number(id),
             gameTitle: game?.title,
             filename: downloadName,
+            // источник из каталога — к нему привяжется итог проверки Защитником после скачивания
+            sourceKey: sourceKeyFor(source),
           });
         } else {
           window.open(locator, '_blank');
@@ -399,6 +403,12 @@ export default function LibraryGamePage() {
           >
             {installing ? <Loader2 size={14} className="animate-spin" /> : <MonitorSmartphone size={14} />}
             {installing ? 'Добавление...' : 'Установить'}
+          </button>
+        )}
+
+        {!installed && (
+          <button type="button" onClick={() => setVirusCheckOpen(true)} className="tl-btn ghost" title="Что нашёл Защитник Windows у игроков, которые уже скачали игру">
+            <ShieldCheck size={14} /> Проверить на вирусы
           </button>
         )}
 
@@ -564,6 +574,16 @@ export default function LibraryGamePage() {
         {installed && <GameTranslatePanel installedId={installed.id} gameId={Number(id)} />}
         </div>
       </div>
+
+      {game && (
+        <VirusCheckModal
+          open={virusCheckOpen}
+          gameId={Number(id)}
+          gameTitle={game.title}
+          sources={game.sources?.length ? game.sources : [{ kind: 'torrent', magnet_uri: game.magnet_uri }]}
+          onClose={() => setVirusCheckOpen(false)}
+        />
+      )}
 
       {game && (
         <SourcePickerModal

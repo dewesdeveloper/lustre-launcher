@@ -12,6 +12,7 @@ import qbSetup from './qbSetup.cjs'
 import qbManaged from './qbManaged.cjs'
 import selfUpdate from './selfUpdate.cjs'
 import hosts from './hosts.cjs'
+import defender from './defender.cjs'
 import { File as MegaFile } from 'megajs'
 
 const { autoUpdater } = electronUpdater
@@ -1221,7 +1222,7 @@ function startHttpRequest(id) {
   make(url, 0)
 }
 
-function httpDownloadStart({ url, kind, gameId, gameTitle, filename, refreshFrom }) {
+function httpDownloadStart({ url, kind, gameId, gameTitle, filename, refreshFrom, sourceKey }) {
   // Gofile, Mixdrop и другие без открытого API — пользователь качает сам во встроенном окне
   const via = hosts.hostKind(url, kind)
   if (via === 'browser') return openHostBrowser({ url, gameId, gameTitle })
@@ -1242,6 +1243,8 @@ function httpDownloadStart({ url, kind, gameId, gameTitle, filename, refreshFrom
     // MediaFire: ссылка на файл берётся со страницы и устаревает — помним страницу
     pageUrl: via === 'mediafire' ? resolved : '',
     needsResolve: via === 'mediafire',
+    // источник в каталоге (url:<ссылка>) — по нему копятся результаты проверок антивирусом
+    sourceKey: typeof sourceKey === 'string' ? sourceKey.slice(0, 300) : '',
   }
   httpDownloads.set(id, rec)
   startHttpRequest(id)
@@ -1574,8 +1577,10 @@ function sendInstallProgress(payload) {
 // Установка игры. Вынесена в отдельную функцию, чтобы обёртка могла
 // отслеживать занятость лаунчера (нельзя предлагать перезапуск под обновление,
 // пока идёт установка).
-async function installGameImpl(gameId) {
+async function installGameImpl(gameId, opts = {}) {
   let contentPath
+  // источник для отчёта о проверке: хеш раздачи или ссылка из каталога
+  let sourceKey = ''
   let baseNameHint
   // id игры в каталоге Lustre — нужен, чтобы засчитывать наигранное время:
   // в реестре installed хранится id скачивания, поэтому catalogId сохраняем отдельно.
@@ -1588,6 +1593,7 @@ async function installGameImpl(gameId) {
     contentPath = hd.filePath
     baseNameHint = hd.gameTitle
     catalogId = Number(hd.gameId) || 0
+    sourceKey = hd.sourceKey || ''
     if (!contentPath || !fs.existsSync(contentPath)) return { error: 'Файл загрузки не найден' }
   } else {
     let torrents
@@ -1609,7 +1615,28 @@ async function installGameImpl(gameId) {
     // каталожный id добавляется тегом при загрузке (см. torrent-add)
     const tagMatch = /lustre-game-(\d+)/.exec(String(t.tags || ''))
     if (tagMatch) catalogId = Number(tagMatch[1]) || 0
+    if (/^[0-9a-f]{40}$/i.test(t.hash || '')) sourceKey = `btih:${t.hash.toLowerCase()}`
     if (!contentPath || !fs.existsSync(contentPath)) return { error: 'Файлы загрузки не найдены: ' + (contentPath || '?') }
+  }
+
+  // Проверка Защитником Windows до распаковки. Итог (без самих файлов) уходит в каталог,
+  // чтобы другие игроки видели его до скачивания. Найдена угроза — установка останавливается,
+  // а продолжить игрок может сам (opts.skipScan).
+  if (!opts.skipScan) {
+    sendInstallProgress({ gameId, catalogId, phase: 'scan', percent: -1 })
+    const [scan, sha256] = await Promise.all([defender.scanPath(contentPath), defender.sha256File(contentPath)])
+    if ((scan.status === 'clean' || scan.status === 'threat') && catalogId > 0 && sourceKey) {
+      try {
+        mainWindow?.webContents.send('scan-result', {
+          gameId: catalogId, sourceKey, sha256, verdict: scan.status, threats: scan.threats, engine: scan.engine,
+        })
+      } catch { /* окно закрыто */ }
+    }
+    if (scan.status === 'threat') {
+      sendInstallProgress({ gameId, catalogId, phase: 'idle', percent: -1 })
+      const names = scan.threats.length ? scan.threats.join(', ') : 'угроза'
+      return { error: `Защитник Windows нашёл: ${names}. Установка остановлена.`, threat: true, threats: scan.threats }
+    }
   }
 
   // Снимаем метку блокировки Windows (Mark of the Web) со всех файлов
@@ -1803,13 +1830,13 @@ async function installGameImpl(gameId) {
   return { ok: true, kind: 'portable', installPath: dest, exePath: entry.exePath }
 }
 
-ipcMain.handle('install-game', async (e, gameId) => {
+ipcMain.handle('install-game', async (e, gameId, opts) => {
   // Повторный клик, пока идёт установка, запускал вторую параллельную
   if (installingIds.has(gameId)) return { error: 'Игра уже устанавливается' }
   installingIds.add(gameId)
   activeInstalls++
   try {
-    return await installGameImpl(gameId)
+    return await installGameImpl(gameId, { skipScan: opts?.skipScan === true })
   } catch (err) {
     console.error('[Install]', err)
     return { error: 'Установка прервалась: ' + (err?.message || err) }
@@ -2294,6 +2321,15 @@ function buildFlavor() {
   }
 }
 
+// Обновления идут с зеркала на нашем сервере (app-update.yml, provider generic);
+// запасной путь — релизы на GitHub того же канала
+let updateUsingGithub = false
+function githubUpdateFeed() {
+  return buildFlavor() === 'staff'
+    ? { provider: 'github', owner: 'DewesDeveloper', repo: 'LustreHub-releases', channel: 'staff' }
+    : { provider: 'github', owner: 'dewesdeveloper', repo: 'lustre-launcher' }
+}
+
 function initAutoUpdates() {
   if (!app.isPackaged) return
   checkSelfUpdateResult()
@@ -2308,6 +2344,14 @@ function initAutoUpdates() {
     const message = err?.message || String(err)
     console.error('[Update] ошибка:', message)
     const phase = updatePhase
+    // Зеркало на нашем сервере не ответило или оборвало загрузку — один раз пробуем GitHub
+    if (!updateUsingGithub && (phase === 'checking' || phase === 'idle' || phase === 'downloading')) {
+      updateUsingGithub = true
+      console.warn('[Update] зеркало недоступно — переключаюсь на GitHub')
+      autoUpdater.setFeedURL(githubUpdateFeed())
+      autoUpdater.checkForUpdates().catch(() => {})
+      return
+    }
     if (phase === 'checking' || phase === 'idle') {
       // не достучались до релизов — не держим пользователя перед лаунчером
       updatePhase = 'idle'

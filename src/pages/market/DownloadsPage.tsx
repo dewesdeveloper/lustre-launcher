@@ -83,7 +83,20 @@ export default function DownloadsPage() {
   const runInstall = async (id: string) => {
     setInstallErrors(prev => ({ ...prev, [id]: '' }));
     setInstallStates(prev => ({ ...prev, [id]: { phase: 'install', percent: -1 } }));
-    const res = await electron?.installGame?.(id);
+    let res = await electron?.installGame?.(id);
+    // Защитник Windows нашёл угрозу — решает игрок (антивирусы ошибаются на репаках)
+    if (res?.threat) {
+      const go = await dlg.confirm({
+        title: 'Защитник Windows нашёл угрозу',
+        message: `${(res.threats || []).join(', ') || 'Угроза'}. Файлы не удалены и не помещены в карантин. Устанавливать игру, только если вы доверяете источнику.`,
+        confirmText: 'Установить всё равно',
+        danger: true,
+      });
+      if (go) {
+        setInstallStates(prev => ({ ...prev, [id]: { phase: 'install', percent: -1 } }));
+        res = await electron?.installGame?.(id, { skipScan: true });
+      }
+    }
     if (res?.error) {
       setInstallErrors(prev => ({ ...prev, [id]: res.error }));
       setInstallStates(prev => {

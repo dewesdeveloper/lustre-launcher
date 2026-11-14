@@ -30,6 +30,7 @@ import ThemeDecor from './components/ThemeDecor';
 import { applyLauncherBackground } from './components/launcherBackground';
 import { reportDownload } from './api/downloadStats';
 import { localClock } from './utils/localClock';
+import { reportScan, type ScanResult } from './api/scanReports';
 
 export default function MainLayout({ children }: { children?: ReactNode }) {
   const { user } = useAuth();
@@ -54,6 +55,13 @@ export default function MainLayout({ children }: { children?: ReactNode }) {
     });
     return () => off?.();
   }, [navigate]);
+
+  // Итог проверки Защитником Windows после скачивания — в каталог, для других игроков
+  useEffect(() => {
+    const electron = (window as any).electron;
+    const off = electron?.onScanResult?.((r: ScanResult) => reportScan(r));
+    return () => off?.();
+  }, []);
 
   // Завершённая установка — в статистику скачиваний (каталожный id приходит из electron)
   useEffect(() => {

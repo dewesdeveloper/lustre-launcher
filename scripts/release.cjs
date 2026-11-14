@@ -22,10 +22,17 @@
  * и latest.yml в beta.20). Здесь electron-builder только собирает (--publish never), а публикация
  * последовательная: черновик → файлы по одному (.yml последним) → сверка размеров → публикация.
  *
+ * Зеркало: после GitHub файлы копируются на наш сервер (https://lustrehub.pro/updates/public|staff) —
+ *   лаунчеры обновляются оттуда (с GitHub у пользователей из России загрузка в разы медленнее),
+ *   а при недоступности зеркала сами переключаются на GitHub. Сервер — WEB_SSH или
+ *   scripts/deploy.local.json, как у deploy:web. RELEASE_SKIP_MIRROR=1 — не копировать.
+ *
  * Требуется GH_TOKEN с правом записи в оба репозитория.
  * RELEASE_SKIP_BUILD=1 — не собирать заново (взять готовые файлы из release/public и release/staff).
  * RELEASE_ONLY=public|staff — собрать и выложить только одну версию.
  * RELEASE_DRY=1 — только собрать и проверить файлы, ничего не публикуя (токен не нужен).
+ * RELEASE_RESUME=1 — дозагрузка после обрыва: репозитории, где эта версия уже опубликована,
+ *   пропускаются (обычно вместе с RELEASE_SKIP_BUILD=1).
  */
 const { execFileSync } = require('child_process');
 const crypto = require('crypto');
@@ -41,8 +48,11 @@ const OUT_ROOT = path.resolve(ROOT, pkg.build.directories?.output || 'release');
 const NOTES_FILE = path.join(ROOT, 'build', 'release-notes.md');
 const TOKEN = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
 
-const PUBLIC_REPO = { owner: pkg.build.publish.owner, repo: pkg.build.publish.repo };
+const PUBLIC_REPO = { owner: 'dewesdeveloper', repo: 'lustre-launcher' };
 const STAFF_REPO = { owner: 'DewesDeveloper', repo: 'LustreHub-releases' };
+// зеркало обновлений на нашем сервере: адрес для лаунчеров и папка на сервере
+const MIRROR_URL = 'https://lustrehub.pro/updates';
+const MIRROR_DIR = '/var/www/lustre-updates';
 
 // Закрытый модуль: на время публичной сборки переносится сюда (вне src — его не увидят tsc и vite)
 const PRIVATE_PATHS = ['src/pages/admin', 'src/api/admin.ts'];
@@ -61,8 +71,8 @@ const FLAVORS = {
     exe: `${PRODUCT}-Staff-Setup-${VERSION}.exe`,
     yml: 'staff.yml',
     builderArgs: [
-      `-c.publish.owner=${STAFF_REPO.owner}`,
-      `-c.publish.repo=${STAFF_REPO.repo}`,
+      '-c.publish.provider=generic',
+      `-c.publish.url=${MIRROR_URL}/staff`,
       '-c.publish.channel=staff',
       `-c.nsis.artifactName=${PRODUCT}-Staff-Setup-\${version}.\${ext}`,
       '-c.extraMetadata.lustreFlavor=staff',
@@ -246,6 +256,53 @@ function artifacts(flavor) {
   return [exe, `${exe}.blockmap`, yml];
 }
 
+// ---------- зеркало на нашем сервере ----------
+
+function mirrorTarget() {
+  let local = {};
+  try { local = JSON.parse(fs.readFileSync(path.join(__dirname, 'deploy.local.json'), 'utf8')); } catch { /* нет файла */ }
+  const ssh = process.env.WEB_SSH || local.ssh;
+  const key = process.env.WEB_SSH_KEY || path.join(require('os').homedir(), '.ssh', 'id_ed25519');
+  return ssh ? { ssh, key } : null;
+}
+
+/**
+ * Скопировать сборку на сервер: установщик и blockmap, последним — .yml (лаунчеры видят версию
+ * только когда файлы уже на месте). Хранятся текущая и предыдущая версии — остальные удаляются.
+ */
+function mirror(flavor) {
+  const t = mirrorTarget();
+  if (!t) {
+    console.warn('  зеркало пропущено: не задан сервер (WEB_SSH или scripts/deploy.local.json)');
+    return;
+  }
+  const [exe, blockmap, yml] = artifacts(flavor);
+  const dir = `${MIRROR_DIR}/${flavor}`;
+  const base = ['-i', t.key, '-o', 'StrictHostKeyChecking=no', '-o', 'ConnectTimeout=25'];
+  const rel = (f) => path.relative(ROOT, f); // scp из Git Bash принимает «C:\…» за адрес хоста
+  const sshRun = (cmd) => run('ssh', [...base, t.ssh, cmd]);
+  const scp = (files, dest) => {
+    for (let i = 1; i <= 4; i++) {
+      try { return run('scp', [...base, ...files.map(rel), `${t.ssh}:${dest}`]); } catch (e) {
+        if (i === 4) throw e;
+        console.warn(`  повтор копирования на сервер (${i}/3)`);
+      }
+    }
+  };
+  console.log(`> зеркало ${flavor}: ${MIRROR_URL}/${flavor}/`);
+  sshRun(`mkdir -p ${dir}/.incoming`);
+  scp([exe, blockmap, yml], `${dir}/.incoming/`);
+  const keep = [path.basename(exe), `${path.basename(exe)}.blockmap`];
+  // переносим установщик, потом .yml; из старых версий оставляем одну предыдущую
+  sshRun([
+    `cd ${dir}`,
+    `mv -f .incoming/${keep[0]} .incoming/${keep[1]} .`,
+    `mv -f .incoming/${path.basename(yml)} ${path.basename(yml)}`,
+    `ls -1t *.exe | tail -n +3 | while read f; do rm -f "$f" "$f.blockmap"; done`,
+    'chmod -R a+rX .',
+  ].join(' && '));
+}
+
 /** Проверки до сборки: права на репозиторий, версия ещё не выпущена, текст релиза новый */
 async function preflight(target, notes) {
   const repoInfo = await gh(target, 'GET', '', { okStatuses: [200, 404] });
@@ -253,7 +310,13 @@ async function preflight(target, notes) {
   if (repoInfo.private) console.warn(`  ВНИМАНИЕ: ${nameOf(target)} приватный — лаунчеры не смогут скачать из него обновление`);
   const releases = await gh(target, 'GET', '/releases?per_page=100');
   const sameTag = releases.filter((r) => r.tag_name === TAG);
-  if (sameTag.some((r) => !r.draft)) fail(`релиз ${TAG} в ${nameOf(target)} уже опубликован — поднимите версию в package.json`);
+  if (sameTag.some((r) => !r.draft)) {
+    if (process.env.RELEASE_RESUME === '1') {
+      console.log(`  ${nameOf(target)}: ${TAG} уже опубликован — пропускаю`);
+      return { done: true, staleDrafts: [] };
+    }
+    fail(`релиз ${TAG} в ${nameOf(target)} уже опубликован — поднимите версию в package.json`);
+  }
   // created_at у релизов ненадёжен (совпадает у разных версий) — берём по публикации
   const previous = releases
     .filter((r) => !r.draft && r.tag_name !== TAG && r.published_at)
@@ -261,7 +324,7 @@ async function preflight(target, notes) {
   if (previous && previous.body && previous.body.includes(notes)) {
     fail(`build/release-notes.md совпадает с текстом прошлого релиза ${previous.tag_name} — обновите его`);
   }
-  return sameTag;
+  return { done: false, staleDrafts: sameTag };
 }
 
 async function publish(target, files, body, staleDrafts) {
@@ -313,7 +376,7 @@ async function publish(target, files, body, staleDrafts) {
       plan.get(key).flavors.push(fl);
     }
   }
-  if (!dry) for (const p of plan.values()) p.staleDrafts = await preflight(p.target, notes);
+  if (!dry) for (const p of plan.values()) Object.assign(p, await preflight(p.target, notes));
 
   if (process.env.RELEASE_SKIP_BUILD !== '1') {
     run('node', ['scripts/check-api-url.cjs']);
@@ -326,10 +389,12 @@ async function publish(target, files, body, staleDrafts) {
     return;
   }
   for (const p of plan.values()) {
+    if (p.done) continue;
     // staff.yml и latest.yml в одном релизе: публичные лаунчеры читают latest.yml, персонал — staff.yml
     const files = p.flavors.flatMap(artifacts);
     const ymls = files.filter((f) => f.endsWith('.yml'));
     await publish(p.target, [...files.filter((f) => !f.endsWith('.yml')), ...ymls], body, p.staleDrafts);
   }
+  if (process.env.RELEASE_SKIP_MIRROR !== '1') for (const fl of flavors) mirror(fl);
   console.log(`\nГотово: ${TAG} опубликован.`);
 })().catch((e) => fail(e.message));

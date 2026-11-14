@@ -122,7 +122,9 @@ const DownloadCard = ({ dl, onPause, onResume, onRemove, onOpenGame, onInstall, 
         <div className="mt-3 pt-3 border-t border-[var(--line)]">
           <div className="flex items-center gap-2 tl-term text-[14px] text-[var(--cyan,#22d3ee)]">
             <Loader2 size={13} className="animate-spin" />
-            {installState!.phase === 'installer'
+            {installState!.phase === 'scan'
+              ? 'Проверка Защитником Windows…'
+              : installState!.phase === 'installer'
               ? 'Установщик запущен — завершите установку и укажите exe на странице игры'
               : installState!.silent
                 ? `Установка без мастера…${installState!.bytes ? ` ${formatBytes(installState!.bytes)}` : ''}`
