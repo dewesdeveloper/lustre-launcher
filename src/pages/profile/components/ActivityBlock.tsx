@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { IconActivity, IconChevronRight } from '@tabler/icons-react';
 import { getUserActivity, type ActivityItem, type ActivityKind } from '../../../api/activity';
 import BadgeEmblem from '../../../components/BadgeEmblem';
+import LevelEmblem from '../../../components/LevelEmblem';
 import { rarityStyles, type BadgeRarity } from '../../../api/badges';
 
 const VERB: Record<string, string> = {
@@ -66,6 +67,8 @@ export default function ActivityBlock({ username, isOwnProfile }: { username: st
               <div className="flex items-center gap-2.5">
                 {isBadge ? (
                   <BadgeEmblem code={it.meta?.code || 'unknown'} rarity={rarity} size={34} />
+                ) : it.kind === 'level_up' && it.target_id > 0 ? (
+                  <LevelEmblem level={it.target_id} size={34} />
                 ) : (
                   <ImageOr
                     src={it.target_image}
@@ -76,7 +79,9 @@ export default function ActivityBlock({ username, isOwnProfile }: { username: st
                 <div className="min-w-0 flex-1">
                   <div className="text-[13px] font-extrabold text-white truncate">
                     {VERB[it.kind] || 'обновил(а) профиль'}
-                    {it.target_name && <span className="text-accent"> {it.target_name}</span>}
+                    {it.kind === 'level_up' && it.target_id > 0
+                      ? <span className="text-accent"> {it.target_id}</span>
+                      : it.target_name && <span className="text-accent"> {it.target_name}</span>}
                   </div>
                   <div className="tl-term text-[14px] tl-muted truncate">{ago(it.created_at)}</div>
                 </div>

@@ -3,7 +3,7 @@ import api from './index';
 // Статистика скачиваний для администрации: лаунчер сообщает, что игра поставлена в загрузку
 // и что установка завершилась. Ошибки отправки не мешают скачиванию — просто пропускаем.
 
-type DownloadStatus = 'started' | 'installed';
+type DownloadStatus = 'started' | 'installed' | 'translated' | 'uninstalled';
 
 // одно событие на игру за сеанс: прогресс установки приходит много раз
 const sent = new Set<string>();

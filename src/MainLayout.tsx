@@ -29,6 +29,7 @@ import { useSearchHotkey } from './utils/searchHotkey';
 import ThemeDecor from './components/ThemeDecor';
 import { applyLauncherBackground } from './components/launcherBackground';
 import { reportDownload } from './api/downloadStats';
+import { localClock } from './utils/localClock';
 
 export default function MainLayout({ children }: { children?: ReactNode }) {
   const { user } = useAuth();
@@ -133,7 +134,7 @@ export default function MainLayout({ children }: { children?: ReactNode }) {
     const s = playSessionRef.current;
     if (!s || s.gameId <= 0 || s.pending < 1000) return;
     const ms = Math.min(s.pending, 6 * 60 * 60 * 1000);
-    api.post('/library/playtime', { game_id: s.gameId, session_ms: ms })
+    api.post('/library/playtime', { game_id: s.gameId, session_ms: ms, ...localClock() })
       .then(() => { s.pending = Math.max(0, s.pending - ms); })
       .catch(() => { /* офлайн — досошлём следующим тиком */ });
   };
@@ -245,7 +246,7 @@ export default function MainLayout({ children }: { children?: ReactNode }) {
             'Content-Type': 'application/json',
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
           },
-          body: JSON.stringify({ game_id: cur.gameId, session_ms: ms }),
+          body: JSON.stringify({ game_id: cur.gameId, session_ms: ms, ...localClock() }),
         }).catch(() => {});
         cur.pending = Math.max(0, cur.pending - ms);
       } catch { /* ignore */ }

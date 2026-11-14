@@ -1,5 +1,6 @@
 import { Camera, Image as ImageIcon, Loader2 } from 'lucide-react';
 import AvatarFrame from '../../../components/AvatarFrame';
+import RankPlate from '../../../components/RankPlate';
 import ProBadge, { PRO_NICK_CLASS } from '../../../components/ProBadge';
 import { PROFILE_THEMES } from '../../../components/profileThemes';
 import { parseTags } from '../constants';
@@ -73,7 +74,7 @@ export default function ProfilePreviewCard({ profile, onAvatarClick, onBannerCli
         </div>
 
         <div className="flex gap-2 flex-wrap mt-3 items-center">
-          <span className="tl-chip age">LVL {profile.level || 1}</span>
+          <RankPlate level={profile.level || 1} size="sm" />
           {tags.map((t, i) => (
             <span
               key={`${t.text}-${i}`}

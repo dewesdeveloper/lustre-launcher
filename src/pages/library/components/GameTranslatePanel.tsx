@@ -48,7 +48,10 @@ const label = 'tl-head text-[10px] font-bold uppercase tracking-[0.16em] text-[v
 const formatMB = (b = 0) => `${(b / 1048576).toFixed(1)} МБ`;
 const formatDuration = (ms: number) => (ms < 60000 ? `${Math.max(1, Math.round(ms / 1000))} с` : `${Math.round(ms / 60000)} мин`);
 
-export default function GameTranslatePanel({ installedId }: { installedId: string }) {
+import { reportDownload } from '../../../api/downloadStats';
+
+/** gameId — id игры в каталоге: готовый перевод засчитывается в значок «Полиглот» */
+export default function GameTranslatePanel({ installedId, gameId }: { installedId: string; gameId?: number }) {
   const electron = (window as any).electron;
   const dlg = useDialog();
   const [status, setStatus] = useState<Status | null>(null);
@@ -68,9 +71,10 @@ export default function GameTranslatePanel({ installedId }: { installedId: strin
       if (p.id !== installedId) return;
       setProgress(p);
       if (p.phase !== 'done' && p.phase !== 'error') setBusy(true);
+      if (p.phase === 'done' && gameId) reportDownload(gameId, 'translated');
     });
     return () => { if (typeof off === 'function') off(); };
-  }, [electron, installedId]);
+  }, [electron, installedId, gameId]);
 
   if (!electron?.translatorStatus || !status?.supported) return null;
 

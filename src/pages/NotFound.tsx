@@ -1,9 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { IconRefresh, IconCoffee, IconHeart, IconAlertTriangle, IconHome } from '@tabler/icons-react';
+import api from '../api';
+import { useAuth } from '../context/AuthContext';
 
 export default function NotFoundPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+
+  // секретный значок «404»: отмечаем визит один раз (сервер ставит флаг)
+  useEffect(() => {
+    if (user?.id) api.post('/me/achievement-event', { event: 'not_found' }).catch(() => {});
+  }, [user?.id]);
   const [pct, setPct] = useState(0);
   const [status, setStatus] = useState('Поиск мотивации…');
   const stall = useRef(0);

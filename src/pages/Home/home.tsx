@@ -18,6 +18,8 @@ import { formatPlaytime } from '../../utils/playtime';
 import type { LibraryEntry } from '../library/types';
 import { Loading } from '../../components/Loading';
 import ImageOr from '../../components/ImageOr';
+import BadgeEmblem from '../../components/BadgeEmblem';
+import LevelEmblem from '../../components/LevelEmblem';
 
 interface FriendEntry {
   id: number;
@@ -264,15 +266,24 @@ export default function Home() {
                 <div className="flex flex-col gap-3">
                   {activity.map((it) => (
                     <div key={it.id} className="tl-panel p-[15px] flex items-center gap-3.5">
-                      <ImageOr
-                        src={it.target_image}
-                        className="w-[42px] h-[42px] object-cover border border-[var(--line-2)] shrink-0"
-                        fallback={<div className="w-[42px] h-[42px] bg-white/[0.03] border border-[var(--line)] shrink-0" />}
-                      />
+                      {it.kind === 'level_up' && it.target_id > 0 ? (
+                        <LevelEmblem level={it.target_id} size={42} />
+                      ) : it.kind === 'badge_earned' ? (
+                        <BadgeEmblem code={it.meta?.code || 'unknown'} rarity={it.meta?.rarity || 'common'} size={42} />
+                      ) : (
+                        <ImageOr
+                          src={it.target_image}
+                          className="w-[42px] h-[42px] object-cover border border-[var(--line-2)] shrink-0"
+                          fallback={<div className="w-[42px] h-[42px] bg-white/[0.03] border border-[var(--line)] shrink-0" />}
+                        />
+                      )}
                       <div className="min-w-0 flex-1">
                         <div className="tl-head text-[10px] font-bold text-white uppercase truncate">{displayName}</div>
                         <div className="tl-term text-[15px] text-[var(--muted)] truncate">
-                          {ACTIVITY_VERB[it.kind]} {it.target_name && <span className="text-white">{it.target_name}</span>}
+                          {ACTIVITY_VERB[it.kind]}{' '}
+                          {it.kind === 'level_up' && it.target_id > 0
+                            ? <span className="text-white">{it.target_id}</span>
+                            : it.target_name && <span className="text-white">{it.target_name}</span>}
                         </div>
                       </div>
                       <span className="tl-term text-[14px] text-[var(--muted-2)] shrink-0">{relTime(it.created_at)}</span>

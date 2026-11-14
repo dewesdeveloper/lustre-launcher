@@ -8,6 +8,8 @@ import ImageOr from '../../components/ImageOr';
 import ProBadge, { PRO_NICK_CLASS } from '../../components/ProBadge';
 import { getActivityFeed, type ActivityItem, type ActivityKind } from '../../api/activity';
 import BadgeEmblem from '../../components/BadgeEmblem';
+import LevelEmblem from '../../components/LevelEmblem';
+import RankPlate from '../../components/RankPlate';
 import { rarityStyles, type BadgeRarity } from '../../api/badges';
 import { useAuth } from '../../context/AuthContext';
 
@@ -243,6 +245,8 @@ function ActivityRow({ item, actorName, isPro, onOpen }: {
 }) {
   const meta = KIND_META[item.kind] || KIND_META.library_add;
   const isBadge = item.kind === 'badge_earned';
+  // у события «уровень» в target_id лежит номер достигнутого уровня
+  const isLevel = item.kind === 'level_up' && item.target_id > 0;
   const rarity = (item.meta?.rarity as BadgeRarity) || 'common';
   const rStyle = rarityStyles[rarity] || rarityStyles.common;
 
@@ -263,6 +267,8 @@ function ActivityRow({ item, actorName, isPro, onOpen }: {
 
       {isBadge ? (
         <div className="shrink-0"><BadgeEmblem code={item.meta?.code || 'unknown'} rarity={rarity} size={40} /></div>
+      ) : isLevel ? (
+        <div className="shrink-0"><LevelEmblem level={item.target_id} size={40} /></div>
       ) : (
         <ImageOr
           src={item.target_image}
@@ -282,7 +288,7 @@ function ActivityRow({ item, actorName, isPro, onOpen }: {
             <span className={isPro ? PRO_NICK_CLASS : undefined}>{actorName}</span>
           </span>{' '}
           <span style={{ color: meta.color }}>{meta.verb}</span>{' '}
-          {item.target_name && (
+          {isLevel ? <span className="text-white">{item.target_id}</span> : item.target_name && (
             targetHref ? (
               <button type="button" onClick={() => onOpen(targetHref)} className="text-white hover:text-accent transition-colors text-left">
                 {item.target_name}
@@ -293,7 +299,8 @@ function ActivityRow({ item, actorName, isPro, onOpen }: {
           )}
         </p>
         {item.meta?.excerpt && <p className="tl-term text-[14px] text-[var(--muted-2)] mt-0.5 line-clamp-1">«{item.meta.excerpt}»</p>}
-        <div className="flex flex-wrap gap-1.5 mt-1">
+        <div className="flex flex-wrap items-center gap-1.5 mt-1">
+          {isLevel && <RankPlate level={item.target_id} size="sm" showLevel={false} />}
           {isBadge && <span className={`tl-chip border ${rStyle.chip}`}>{rStyle.label}</span>}
           {item.kind === 'review' && item.meta?.positive !== undefined && (
             <span className={`tl-chip ${item.meta.neutral ? 'warn' : item.meta.positive ? 'ok' : 'nsfw'}`}>{item.meta.neutral ? 'нейтрально' : item.meta.positive ? 'рекомендует' : 'не рекомендует'}</span>

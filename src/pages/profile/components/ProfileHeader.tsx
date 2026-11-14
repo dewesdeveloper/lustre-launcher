@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { IconEdit, IconUserPlus, IconMessage, IconUserCheck, IconClock, IconUserMinus, IconLock } from '@tabler/icons-react';
 import AvatarFrame from '../../../components/AvatarFrame';
+import RankPlate from '../../../components/RankPlate';
 import ProBadge, { PRO_NICK_CLASS } from '../../../components/ProBadge';
 import type { ProfileTheme } from '../../../components/profileThemes';
 import { type FriendState, type ProfileTag, levelProgress } from '../constants';
@@ -109,7 +110,7 @@ export default function ProfileHeader({
 
             <div className="flex gap-2.5 mt-3.5 flex-wrap items-center">
               <span className={`tl-chip ${isAway ? 'warn' : isOnline ? 'ok' : ''}`}>{isAway ? 'НЕТ НА МЕСТЕ' : isOnline ? 'В СЕТИ' : 'НЕ В СЕТИ'}</span>
-              <span className="tl-chip age">LVL {level}</span>
+              <RankPlate level={level} size="sm" />
               {tags?.map((t, i) => (
                 <span
                   key={`${t.text}-${i}`}

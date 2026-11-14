@@ -177,6 +177,7 @@ export default function LibraryGamePage() {
     });
     if (!ok) return;
     const res = await electron?.uninstallGame?.(installed.id);
+    if (!res?.error) reportDownload(Number(id), 'uninstalled');
     if (res?.keptFiles) {
       await dlg.alert({ title: 'Игра убрана из библиотеки', message: `Игра была установлена своим установщиком, поэтому её файлы остались в ${res.path}. Удалите их её деинсталлятором или вручную.` });
     }
@@ -560,7 +561,7 @@ export default function LibraryGamePage() {
             )}
           </div>
         </div>
-        {installed && <GameTranslatePanel installedId={installed.id} />}
+        {installed && <GameTranslatePanel installedId={installed.id} gameId={Number(id)} />}
         </div>
       </div>
 

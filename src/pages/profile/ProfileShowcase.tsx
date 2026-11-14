@@ -1,7 +1,8 @@
 import { useEffect, useState, type ComponentType } from 'react';
 import { IconAward, IconCalendar, IconDeviceGamepad, IconStar } from '@tabler/icons-react';
 import api from '../../api';
-import { getUserBadges, rarityStyles, type UserBadge } from '../../api/badges';
+import { getUserBadges, type UserBadge } from '../../api/badges';
+import BadgeEmblem from '../../components/BadgeEmblem';
 import { parseShowcases, type Showcase } from './constants';
 
 type FavGame = { title: string; header_image?: string; banner_url?: string; developer?: string; release_date?: string };
@@ -34,14 +35,11 @@ function BadgesShelf({ userId }: { userId?: number }) {
 
   return (
     <div className="grid grid-cols-4 gap-3 sm:grid-cols-6 lg:grid-cols-8">
-      {list.slice(0, MAX_BADGES).map(({ ID, badge }) => {
-        const r = rarityStyles[badge?.rarity] ?? rarityStyles.common;
-        return (
-          <div key={ID} title={`${badge?.name} — ${badge?.description}`} className={`flex aspect-square cursor-default items-center justify-center border bg-black/40 text-2xl transition-transform hover:scale-110 ${r.border} ${r.glow}`}>
-            {badge?.icon}
-          </div>
-        );
-      })}
+      {list.slice(0, MAX_BADGES).map(({ ID, badge }) => (
+        <div key={ID} title={`${badge?.name} — ${badge?.description}`} className="flex aspect-square cursor-default items-center justify-center transition-transform hover:scale-110">
+          <BadgeEmblem code={badge?.code} rarity={badge?.rarity} size={52} />
+        </div>
+      ))}
     </div>
   );
 }

@@ -493,3 +493,48 @@
   .tl-grad-text, .tl-sweep-bg, .tl-hot, .tl-badge-pulse, .tl-shine::after, .tl-live-dot { animation: none !important; }
   .tl-lift:hover { transform: none; }
 }
+
+/* ---------- Высшее звание «Сияние Lustre» (150 уровень): пульсирующее свечение плашки ---------- */
+@keyframes tl-rank-radiance {
+  0%, 100% {
+    box-shadow: 0 0 6px 1px color-mix(in srgb, var(--rank-glow) 70%, transparent),
+      0 0 14px 2px color-mix(in srgb, var(--rank-glow) 35%, transparent);
+    filter: brightness(1);
+  }
+  50% {
+    box-shadow: 0 0 14px 4px color-mix(in srgb, var(--rank-glow) 95%, transparent),
+      0 0 34px 10px color-mix(in srgb, var(--rank-glow) 55%, transparent),
+      0 0 60px 18px color-mix(in srgb, var(--rank-glow) 22%, transparent);
+    filter: brightness(1.18);
+  }
+}
+.tl-rank-radiance { animation: tl-rank-radiance 1.8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .tl-rank-radiance {
+    animation: none;
+    box-shadow: 0 0 14px 4px color-mix(in srgb, var(--rank-glow) 80%, transparent);
+  }
+}
+
+/* ---------- Свечение плашек званий: сила растёт со званием (переменные задаёт RankPlate) ----------
+   --rank-glow — цвет звания; --g-r/--g-s/--g-a — радиус, разлёт и яркость свечения в покое;
+   на пике пульса — --g-r2/--g-a2 и внешний ореол --g-r3/--g-a3; --g-dur — период; --g-b — вспышка яркости. */
+.tl-rank-glow {
+  box-shadow: 0 0 var(--g-r) var(--g-s) color-mix(in srgb, var(--rank-glow) var(--g-a), transparent);
+}
+@keyframes tl-rank-pulse {
+  0%, 100% {
+    box-shadow: 0 0 var(--g-r) var(--g-s) color-mix(in srgb, var(--rank-glow) var(--g-a), transparent),
+      0 0 0 0 transparent;
+    filter: brightness(1);
+  }
+  50% {
+    box-shadow: 0 0 var(--g-r2) var(--g-s) color-mix(in srgb, var(--rank-glow) var(--g-a2), transparent),
+      0 0 var(--g-r3) 0 color-mix(in srgb, var(--rank-glow) var(--g-a3), transparent);
+    filter: brightness(var(--g-b));
+  }
+}
+.tl-rank-glow.pulse { animation: tl-rank-pulse var(--g-dur) ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .tl-rank-glow.pulse { animation: none; }
+}

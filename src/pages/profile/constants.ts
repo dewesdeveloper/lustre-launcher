@@ -10,16 +10,32 @@ export const isImageUrl = (p: string) => /^(https?:\/\/|data:)/i.test(p);
 
 export type FriendState = { status: 'none' | 'self' | 'accepted' | 'pending_in' | 'pending_out'; request_id: number };
 
-/** Эра аккаунта по уровню (индивидуальная шкала Lustre, 30 XP на уровень) */
-export function eraForLevel(level: number): { name: string; color: string } {
+/** Эры аккаунта по уровню: с какого уровня начинается, название и цвет */
+export const ERAS = [
+  { from: 1, name: 'Новичок', color: '#9CA3AF' },
+  { from: 3, name: 'Искатель', color: '#34D399' },
+  { from: 5, name: 'Странник', color: '#22D3EE' },
+  { from: 8, name: 'Хранитель', color: '#3A86FF' },
+  { from: 12, name: 'Мастер', color: '#A78BFA' },
+  { from: 18, name: 'Легенда', color: '#FFB020' },
+  { from: 25, name: 'Миф', color: '#FF4D6D' },
+  // звания после Мифа — до 150 уровня
+  { from: 35, name: 'Титан', color: '#FB923C' },
+  { from: 45, name: 'Вестник', color: '#2DD4BF' },
+  { from: 60, name: 'Архонт', color: '#E879F9' },
+  { from: 75, name: 'Полубог', color: '#FACC15' },
+  { from: 90, name: 'Бессмертный', color: '#F43F5E' },
+  { from: 110, name: 'Абсолют', color: '#F1F5F9' },
+  { from: 130, name: 'Вечный', color: '#60A5FA' },
+  { from: 150, name: 'Сияние Lustre', color: '#FF2D8F' },
+] as const;
+
+/** Звание (эра) по уровню (шкала Lustre, 30 XP на уровень); tier — 0 (Новичок) … 14 (Сияние Lustre, 150 уровень) */
+export function eraForLevel(level: number): { name: string; color: string; tier: number } {
   const l = level || 1;
-  if (l >= 25) return { name: 'Миф', color: '#FF4D6D' };
-  if (l >= 18) return { name: 'Легенда', color: '#FFB020' };
-  if (l >= 12) return { name: 'Мастер', color: '#8338EC' };
-  if (l >= 8) return { name: 'Хранитель', color: '#3A86FF' };
-  if (l >= 5) return { name: 'Странник', color: '#22D3EE' };
-  if (l >= 3) return { name: 'Искатель', color: '#34D399' };
-  return { name: 'Новичок', color: '#9CA3AF' };
+  let tier = 0;
+  ERAS.forEach((e, i) => { if (l >= e.from) tier = i; });
+  return { name: ERAS[tier].name, color: ERAS[tier].color, tier };
 }
 
 /** Прогресс до следующего уровня (шкала 30 XP на уровень) */

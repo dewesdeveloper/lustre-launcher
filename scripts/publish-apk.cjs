@@ -14,8 +14,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const pkg = require(path.join(__dirname, '..', 'package.json'));
-const { owner, repo } = pkg.build.publish;
+// APK живёт в старом репозитории релизов: оттуда его отдаёт сервер (GET /download/android,
+// RELEASES_REPO). build.publish лаунчера теперь указывает на открытый lustre-launcher — он сюда не подходит.
+// Другой репозиторий — переменной APK_REPO=owner/name (тогда и на сервере RELEASES_REPO_ANDROID).
+const [owner, repo] = (process.env.APK_REPO || 'DewesDeveloper/LustreHub-releases').split('/');
 const TOKEN = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
 const API = `https://api.github.com/repos/${owner}/${repo}`;
 const ASSET = 'Lustre.apk';
