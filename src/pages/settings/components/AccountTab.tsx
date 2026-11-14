@@ -6,6 +6,10 @@ import { useConnectivity } from '../../../context/ConnectivityContext';
 import SettingsCard from './SettingsCard';
 import SettingsRow from './SettingsRow';
 import SettingsToggle from './SettingsToggle';
+import LinkedAccounts from './LinkedAccounts';
+
+/** Заглушка вместо почты у аккаунтов из Steam/GitHub — показывать её нельзя */
+const realEmail = (email?: string) => (email && !/@oauth\.local$/i.test(email) ? email : '');
 
 export default function AccountTab({ user, onNavigateTab }: { user: any; onNavigateTab: (tab: Tab) => void }) {
   const openPath = useOpenPath();
@@ -23,7 +27,7 @@ export default function AccountTab({ user, onNavigateTab }: { user: any; onNavig
           />
           <div className="min-w-0">
             <h3 className="tl-head text-[13px] font-bold text-white truncate">{user?.profile?.display_name || user?.username}</h3>
-            <p className="tl-term text-[16px] tl-muted truncate">{user?.email}</p>
+            <p className="tl-term text-[16px] tl-muted truncate">{realEmail(user?.email) || 'Почта не указана'}</p>
           </div>
           <button
             onClick={() => openPath('/profile/edit')}
@@ -58,8 +62,9 @@ export default function AccountTab({ user, onNavigateTab }: { user: any; onNavig
       <div className="tl-panel p-[22px]">
         <h3 className="tl-head text-[11px] font-bold text-white mb-2" style={{ textShadow: 'var(--glow-sm)' }}>ОСНОВНОЕ</h3>
         <SettingsRow label="Ваш код друга" value={user?.friend_code || 'Не задан'} />
-        <SettingsRow label="Адрес эл. почты" value={user?.email || 'Не указан'} />
       </div>
+
+      <LinkedAccounts />
 
       <div className="tl-panel p-[22px]">
         <div className="flex items-center justify-between gap-6">

@@ -1,15 +1,19 @@
 #!/usr/bin/env node
 /**
- * Публикация мобильного приложения: скачивает APK (например, артефакт сборки EAS) и
- * прикрепляет его как Lustre.apk к последнему релизу в репозитории релизов. Сервер
- * (GET /download/android) отдаёт самый свежий APK, найденный среди релизов.
- * Важно: если удалить релиз с APK, ссылка на скачивание потеряет этот файл.
+ * Публикация мобильного приложения:
+ *  1) APK и latest.json — на наш сервер (/var/www/lustre-updates/android): оттуда приложение
+ *     обновляется само (GET /app/android/latest) и оттуда же его отдаёт кнопка на сайте;
+ *  2) Lustre.apk — в последний релиз репозитория релизов: запасной вариант, если зеркало недоступно.
  *
- *   node scripts/publish-apk.cjs <адрес APK или путь к файлу>
+ *   node scripts/publish-apk.cjs --eas <id сборки EAS>     — артефакт, версия и номер сборки из EAS
+ *   node scripts/publish-apk.cjs <адрес или путь> --version 1.1.0 --code 5
  *
+ * Без номера сборки (--code) автообновление не сработает: им приложение сравнивает версии.
+ * Что нового — из LustreMobile/release-notes.md (если есть). Сервер — WEB_SSH или scripts/deploy.local.json.
  * Нужен GH_TOKEN с доступом к репозиторию релизов.
  */
 const { execFileSync } = require('child_process');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -27,9 +31,83 @@ function fail(msg) {
   process.exit(1);
 }
 
-const source = process.argv[2];
-if (!source) fail('укажите адрес APK или путь к файлу');
+const args = process.argv.slice(2);
+const opt = (name) => {
+  const i = args.indexOf(name);
+  return i >= 0 ? args[i + 1] : undefined;
+};
+const MOBILE = path.join(__dirname, '..', '..', 'LustreMobile');
+let source = args.find((a, i) => !a.startsWith('--') && !(i > 0 && args[i - 1].startsWith('--')));
+let appVersion = opt('--version') || '';
+let versionCode = Number(opt('--code') || 0);
+
+const easId = opt('--eas');
+if (easId) {
+  console.log(`> сборка EAS ${easId}`);
+  const out = execFileSync('npx', ['eas-cli', 'build:view', easId, '--json'], { cwd: MOBILE, encoding: 'utf8', shell: true, stdio: ['ignore', 'pipe', 'ignore'] });
+  const b = JSON.parse(out.slice(out.indexOf('{')));
+  if (b.status !== 'FINISHED') fail(`сборка в статусе ${b.status}`);
+  source = b.artifacts?.buildUrl || b.artifacts?.applicationArchiveUrl;
+  appVersion = b.appVersion || appVersion;
+  versionCode = Number(b.appBuildVersion || versionCode);
+}
+if (!source) fail('укажите --eas <id> или адрес APK / путь к файлу');
 if (!TOKEN) fail('нет GH_TOKEN');
+if (!Number.isInteger(versionCode) || versionCode <= 0) console.warn('  ВНИМАНИЕ: нет номера сборки (--code) — на зеркало APK не попадёт, автообновление его не увидит');
+
+function mirrorTarget() {
+  let local = {};
+  try { local = JSON.parse(fs.readFileSync(path.join(__dirname, 'deploy.local.json'), 'utf8')); } catch { /* нет файла */ }
+  const ssh = process.env.WEB_SSH || local.ssh;
+  const key = process.env.WEB_SSH_KEY || path.join(os.homedir(), '.ssh', 'id_ed25519');
+  return ssh ? { ssh, key } : null;
+}
+
+/** APK и latest.json на сервер: сначала файл, последним — манифест (он делает версию видимой) */
+function mirror(file, size) {
+  const t = mirrorTarget();
+  if (!t) {
+    console.warn('  зеркало пропущено: не задан сервер (WEB_SSH или scripts/deploy.local.json)');
+    return;
+  }
+  const DIR = '/var/www/lustre-updates/android';
+  const name = `Lustre-${versionCode}.apk`;
+  let notes = '';
+  try { notes = fs.readFileSync(path.join(MOBILE, 'release-notes.md'), 'utf8').trim().slice(0, 4000); } catch { /* без описания */ }
+  const manifest = {
+    version: appVersion, version_code: versionCode, file: name, size,
+    sha256: crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'),
+    notes, published_at: new Date().toISOString(),
+  };
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lustre-apk-'));
+  const apkCopy = path.join(tmpDir, name);
+  const json = path.join(tmpDir, 'latest.json');
+  fs.copyFileSync(file, apkCopy);
+  fs.writeFileSync(json, JSON.stringify(manifest, null, 2));
+  const base = ['-i', t.key, '-o', 'StrictHostKeyChecking=no', '-o', 'ConnectTimeout=25'];
+  const run = (cmd, a) => execFileSync(cmd, a, { stdio: 'inherit', cwd: tmpDir });
+  try {
+    console.log(`> зеркало: https://lustrehub.pro/updates/android/${name}`);
+    run('ssh', [...base, t.ssh, `mkdir -p ${DIR}/.incoming`]);
+    for (let i = 1; ; i++) {
+      // относительные имена: scp из Git Bash принимает «C:\…» за адрес хоста
+      try { run('scp', [...base, name, 'latest.json', `${t.ssh}:${DIR}/.incoming/`]); break; } catch (e) {
+        if (i === 4) throw e;
+        console.warn(`  повтор копирования на сервер (${i}/3)`);
+      }
+    }
+    // APK, потом манифест; из старых сборок оставляем одну предыдущую
+    run('ssh', [...base, t.ssh, [
+      `cd ${DIR}`,
+      `mv -f .incoming/${name} .`,
+      'mv -f .incoming/latest.json latest.json',
+      'ls -1t Lustre-*.apk | tail -n +3 | xargs -r rm -f',
+      'chmod -R a+rX .',
+    ].join(' && ')]);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
 
 // Токен — во временном файле заголовков, а не в аргументах (их видно в списке процессов)
 const hdr = path.join(os.tmpdir(), `lustre-apk-${process.pid}.hdr`);
@@ -61,6 +139,8 @@ try {
   fs.closeSync(fd);
   if (head.toString('latin1') !== 'PK') fail('файл не похож на APK');
 
+  if (versionCode > 0) mirror(file, size);
+
   const release = gh('GET', `${API}/releases/latest`);
   console.log(`> релиз ${release.tag_name}, ${ASSET} (${(size / 1024 / 1024).toFixed(1)} МБ)`);
   const stale = (release.assets || []).find((a) => a.name === ASSET);
@@ -72,7 +152,7 @@ try {
     ['-H', 'Content-Type: application/vnd.android.package-archive', '--data-binary', `@${file}`, '--max-time', '3600'],
   );
   if (asset.size !== size) fail(`размер не совпал: ${asset.size} ≠ ${size}`);
-  console.log(`Готово: ${asset.browser_download_url}`);
+  console.log(`Готово: ${asset.browser_download_url}${versionCode > 0 ? ` (сборка ${versionCode}, версия ${appVersion || '—'})` : ''}`);
 } catch (e) {
   fail((e.stdout || '').toString().slice(0, 300) || e.message);
 } finally {

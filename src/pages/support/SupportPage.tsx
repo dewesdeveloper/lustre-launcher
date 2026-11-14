@@ -21,7 +21,7 @@ export default function SupportPage() {
   // --- форма ---
   const [topic, setTopic] = useState(TOPICS[0].label);
   const [topicOpen, setTopicOpen] = useState(false);
-  const [email, setEmail] = useState(user?.email || '');
+  const [email, setEmail] = useState(user?.email && !/@oauth\.local$/i.test(user.email) ? user.email : '');
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
