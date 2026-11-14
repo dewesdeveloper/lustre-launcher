@@ -4,7 +4,7 @@ import { X, Download, Users, Loader2, HardDrive, Globe } from "lucide-react";
 
 export interface DownloadSource {
   id?: number;
-  kind?: 'torrent' | 'direct' | 'pixeldrain' | 'itch';
+  kind?: 'torrent' | 'direct' | 'pixeldrain' | 'itch' | 'mega' | 'mediafire' | 'browser';
   label?: string;
   magnet_uri?: string;
   url?: string;
@@ -33,7 +33,25 @@ const KIND_LABEL: Record<string, string> = {
   direct: "Прямая ссылка",
   pixeldrain: "Pixeldrain",
   itch: "itch.io",
+  mega: "MEGA",
+  mediafire: "MediaFire",
+  browser: "Скачивание на сайте",
 };
+
+/** Подпись источника: у прямой ссылки и «сайта» — название сервиса из адреса */
+function sourceLabel(kind: string, url?: string): string {
+  if ((kind === 'direct' || kind === 'browser') && url) {
+    try {
+      const host = new URL(url).hostname.replace(/^www\./, '');
+      if (/gofile/.test(host)) return 'Gofile — скачивание на сайте';
+      if (/m[i1]xdr/.test(host)) return 'Mixdrop — скачивание на сайте';
+      if (/mega\./.test(host)) return 'MEGA';
+      if (/mediafire/.test(host)) return 'MediaFire';
+      if (kind === 'browser') return `${host} — скачивание на сайте`;
+    } catch { /* некорректная ссылка — общая подпись */ }
+  }
+  return KIND_LABEL[kind] ?? kind;
+}
 
 // Модальное окно выбора источника скачивания в стиле TL: панель с уголками,
 // пиксельный заголовок, квадратные строки. Для торрентов при открытии
@@ -114,7 +132,7 @@ const SourcePickerModal = ({ open, gameTitle, sources, onPick, onClose }: Props)
                     <span className="tl-head text-[10px] font-bold uppercase tracking-[0.12em] text-white block truncate group-hover:text-white">
                       {s.label || `Источник ${i + 1}`}
                     </span>
-                    <span className="tl-term text-[13px] tl-muted">{KIND_LABEL[kind]}</span>
+                    <span className="tl-term text-[13px] tl-muted">{sourceLabel(kind, s.url)}</span>
                   </span>
                 </span>
 

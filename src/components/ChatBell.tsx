@@ -13,6 +13,7 @@ import { nativeNotify } from '../utils/nativeNotify';
 import { getNotifyPrefs, playNotifSound } from '../utils/notifyPrefs';
 import Tooltip from './Tooltip';
 import { NotificationDropdown } from './chatbell/NotificationDropdown';
+import { admin } from '../admin';
 import type { PendingRequest, ProfileComment } from './chatbell/NotificationDropdown';
 
 const HEARTBEAT_KEY = 'lh_active_chat';
@@ -39,6 +40,10 @@ function activeChatGroup(): number | null {
 const SWING = [0, 10, -10, 5, -5, 2, 0];
 const bellVariants: Variants = { ring: { rotate: SWING, transition: { duration: 0.9, ease: 'easeInOut' } } };
 
+// Счётчик закрытого модуля админки; в сборке без него — всегда 0 (хук вызывается безусловно)
+const useAdminBellCount = admin?.useBellCount ?? (() => 0);
+const AdminBellSection = admin?.BellSection;
+
 const seenKey = (userId: number) => `lh_seen_comments_ts_${userId}`;
 const bonusSeenKey = (userId: number) => `lh_seen_bonus_${userId}`;
 
@@ -52,6 +57,7 @@ export const ChatBell = () => {
   const [comments, setComments] = useState<ProfileComment[]>([]);
   const [bonusReady, setBonusReady] = useState(false);
   const [busyReq, setBusyReq] = useState<number | null>(null);
+  const staffCount = useAdminBellCount();
   const wrapRef = useRef<HTMLDivElement>(null);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // id уже виденных входящих заявок (для системных уведомлений); null — ещё не грузили
@@ -292,7 +298,8 @@ export const ChatBell = () => {
     unread +
     requests.length +
     newComments.length +
-    (bonusReady ? 1 : 0);
+    (bonusReady ? 1 : 0) +
+    staffCount;
 
   const unreadConvs = convs.filter((c) => c.unread > 0).slice(0, 4);
 
@@ -339,6 +346,7 @@ export const ChatBell = () => {
         newComments={newComments}
         onOpenProfile={() => navigate(`/profile/${user?.username}`)}
         onMarkAllRead={markAllReadNow}
+        extra={AdminBellSection && staffCount > 0 ? <AdminBellSection count={staffCount} onClose={() => setOpen(false)} /> : null}
       />
     </div>
   );

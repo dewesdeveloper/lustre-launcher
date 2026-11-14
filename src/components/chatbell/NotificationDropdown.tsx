@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bell, Check, X, UserPlus, MessageSquare, MessageCircle, Gift } from 'lucide-react';
 import type { ChatConversation } from '../../api/chat';
@@ -44,13 +45,15 @@ interface NotificationDropdownProps {
   onOpenProfile: () => void;
   /** «Прочитать все»: снимает счётчики чата, комментариев и напоминание о бонусе */
   onMarkAllRead?: () => void;
+  /** Дополнительный раздел сверху (из закрытого модуля админки) */
+  extra?: ReactNode;
 }
 
 export const NotificationDropdown = ({
   open, onClose, total, canMarkRead, bonusReady, onOpenCosmetics,
   requests, busyReq, onAcceptRequest, onDeclineRequest,
   unread, unreadConvs, onOpenChat, newComments, onOpenProfile,
-  onMarkAllRead,
+  onMarkAllRead, extra,
 }: NotificationDropdownProps) => (
   <AnimatePresence>
     {open && (
@@ -88,6 +91,8 @@ export const NotificationDropdown = ({
             <p className="text-pearl/60 text-xs uppercase font-bold tracking-widest">Пока нет уведомлений</p>
           </div>
         )}
+
+        {extra}
 
         {/* Системные */}
         {bonusReady && (

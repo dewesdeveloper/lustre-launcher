@@ -11,6 +11,8 @@ import electronUpdater from 'electron-updater'
 import qbSetup from './qbSetup.cjs'
 import qbManaged from './qbManaged.cjs'
 import selfUpdate from './selfUpdate.cjs'
+import hosts from './hosts.cjs'
+import { File as MegaFile } from 'megajs'
 
 const { autoUpdater } = electronUpdater
 
@@ -907,13 +909,11 @@ const httpDownloads = new Map() // id -> запись загрузки
 const httpHandles = new Map()   // id -> { req, aborted }
 let activeInstalls = 0          // сколько установок идёт прямо сейчас (guard обновлений)
 
-// Pixeldrain: /u/{id} -> прямой поток api/file/{id}
+// Ссылка для скачивания: Pixeldrain — прямой поток API (папка — zip), остальное как есть.
+// MEGA, MediaFire и сервисы без API разбираются отдельно (electron/hosts.cjs).
 function resolveSourceUrl(url, kind) {
   if (!url) return ''
-  if (kind === 'pixeldrain' || /pixeldrain\.com/i.test(url)) {
-    const m = /pixeldrain\.com\/(?:u|l)\/([\w-]+)/i.exec(url)
-    if (m) return `https://pixeldrain.com/api/file/${m[1]}?download`
-  }
+  if (hosts.hostKind(url, kind) === 'pixeldrain') return hosts.pixeldrainUrl(url)
   return url
 }
 
@@ -1049,6 +1049,29 @@ function httpRequestRelink(id, rec) {
 function startHttpRequest(id) {
   const rec = httpDownloads.get(id)
   if (!rec || httpHandles.has(id)) return
+  if (rec.engine === 'mega') return startMegaRequest(id)
+  if (rec.engine === 'browser') return
+  // MediaFire: сначала берём ссылку на файл со страницы
+  if (rec.needsResolve && rec.pageUrl) {
+    const pending = { req: { destroy() {} }, aborted: false }
+    httpHandles.set(id, pending)
+    rec.status = 'downloading'
+    rec.waiting = true
+    broadcastDownloads()
+    hosts.resolveMediafire(rec.pageUrl).then((direct) => {
+      if (pending.aborted || httpDownloads.get(id) !== rec) return
+      httpHandles.delete(id)
+      rec.url = direct
+      rec.needsResolve = false
+      startHttpRequest(id)
+    }, (err) => {
+      if (pending.aborted) return
+      httpHandles.delete(id)
+      if (net.isOnline()) httpFail(id, err.message)
+      else httpRetryLater(id, err.message)
+    })
+    return
+  }
   const url = rec.url
   const offset = httpFileSize(rec)
   rec.status = 'downloading'
@@ -1091,6 +1114,14 @@ function startHttpRequest(id) {
       if (res.statusCode >= 400) {
         res.resume()
         if (HTTP_LINK_EXPIRED.includes(res.statusCode) && httpRequestRelink(id, rec)) return
+        // ссылка MediaFire устарела — берём новую со страницы файла
+        if (HTTP_LINK_EXPIRED.includes(res.statusCode) && rec.pageUrl && (rec.relinks || 0) < HTTP_RELINK_MAX) {
+          rec.relinks = (rec.relinks || 0) + 1
+          rec.needsResolve = true
+          httpHandles.delete(id)
+          startHttpRequest(id)
+          return
+        }
         httpFail(id, `HTTP ${res.statusCode}`)
         return
       }
@@ -1191,6 +1222,9 @@ function startHttpRequest(id) {
 }
 
 function httpDownloadStart({ url, kind, gameId, gameTitle, filename, refreshFrom }) {
+  // Gofile, Mixdrop и другие без открытого API — пользователь качает сам во встроенном окне
+  const via = hosts.hostKind(url, kind)
+  if (via === 'browser') return openHostBrowser({ url, gameId, gameTitle })
   const resolved = resolveSourceUrl(url, kind)
   if (!resolved) return { error: 'Пустая ссылка' }
   const id = 'http:' + crypto.createHash('md5').update(resolved).digest('hex').slice(0, 16)
@@ -1203,6 +1237,11 @@ function httpDownloadStart({ url, kind, gameId, gameTitle, filename, refreshFrom
     hintName: String(filename || ''), refreshFrom: String(refreshFrom || ''),
     downloaded: 0, totalSize: 0, downloadSpeed: 0, eta: 0,
     status: 'downloading', error: null, addedAt: Date.now(), lastBytes: 0, lastTime: Date.now(),
+    // engine: http — обычный HTTP, mega — через API MEGA с расшифровкой
+    engine: via === 'mega' ? 'mega' : 'http',
+    // MediaFire: ссылка на файл берётся со страницы и устаревает — помним страницу
+    pageUrl: via === 'mediafire' ? resolved : '',
+    needsResolve: via === 'mediafire',
   }
   httpDownloads.set(id, rec)
   startHttpRequest(id)
@@ -1213,6 +1252,13 @@ function httpDownloadStart({ url, kind, gameId, gameTitle, filename, refreshFrom
 function httpPause(id) {
   const rec = httpDownloads.get(id)
   if (!rec) return
+  if (rec.engine === 'browser') {
+    try { rec.item?.pause() } catch { /* загрузка уже закончилась */ }
+    rec.status = 'paused'
+    rec.downloadSpeed = 0
+    broadcastDownloads()
+    return
+  }
   rec.status = 'paused'
   rec.downloadSpeed = 0
   rec.waiting = false
@@ -1226,6 +1272,17 @@ function httpPause(id) {
 function httpResume(id) {
   const rec = httpDownloads.get(id)
   if (!rec) return
+  if (rec.engine === 'browser') {
+    if (rec.item?.canResume()) {
+      rec.item.resume()
+      rec.status = 'downloading'
+      rec.error = null
+    } else {
+      httpFail(id, 'Продолжить не получится — удалите загрузку и скачайте заново')
+    }
+    broadcastDownloads()
+    return
+  }
   rec.status = 'downloading'
   rec.error = null
   rec.retries = 0
@@ -1251,6 +1308,9 @@ function httpRelink(id, url) {
 function httpRemove(id, deleteFiles) {
   const rec = httpDownloads.get(id)
   if (!rec) return
+  if (rec.engine === 'browser' && rec.item && rec.item.getState() === 'progressing') {
+    try { rec.item.cancel() } catch { /* уже отменена */ }
+  }
   clearTimeout(rec.retryTimer)
   const h = httpHandles.get(id)
   if (h) { h.aborted = true; if (h.req) h.req.destroy() }
@@ -1258,6 +1318,189 @@ function httpRemove(id, deleteFiles) {
   httpDownloads.delete(id)
   if (deleteFiles !== false && rec.filePath) fs.promises.rm(rec.filePath, { force: true }).catch(() => {})
   broadcastDownloads()
+}
+
+// --- MEGA: файл качается через API и расшифровывается на лету (megajs) ---
+
+function megaError(err) {
+  const msg = String(err?.message || err || '')
+  if (/EOVERQUOTA|quota|bandwidth|509/i.test(msg)) return 'MEGA: исчерпан бесплатный лимит трафика. Попробуйте позже или скачайте через сайт MEGA'
+  if (/ENOENT|-9\b|not found/i.test(msg)) return 'Файл на MEGA удалён или ссылка неверная'
+  if (/key|decrypt|-14\b/i.test(msg)) return 'В ссылке MEGA нет ключа (часть после #) или он неверный'
+  return `MEGA: ${msg || 'ошибка загрузки'}`
+}
+
+function httpTargetPath(id, fileName) {
+  const base = httpDirOrDefault()
+  try { fs.mkdirSync(base, { recursive: true }) } catch {}
+  return path.join(base, `${id.replace(/[^a-z0-9]/gi, '_')}_${String(fileName).replace(/[\\/:*?"<>|]/g, '_')}`)
+}
+
+function trackProgress(rec) {
+  const now = Date.now()
+  if (now - rec.lastTime < 700) return
+  rec.downloadSpeed = Math.round(((rec.downloaded - rec.lastBytes) * 1000) / (now - rec.lastTime))
+  rec.lastBytes = rec.downloaded
+  rec.lastTime = now
+  rec.eta = rec.downloadSpeed > 0 ? Math.round((rec.totalSize - rec.downloaded) / rec.downloadSpeed) : 0
+  broadcastDownloads()
+}
+
+async function startMegaRequest(id) {
+  const rec = httpDownloads.get(id)
+  if (!rec || httpHandles.has(id)) return
+  const handle = { req: { destroy() {} }, aborted: false }
+  httpHandles.set(id, handle)
+  rec.status = 'downloading'
+  rec.error = null
+  rec.waiting = true
+  broadcastDownloads()
+
+  let file
+  try {
+    file = MegaFile.fromURL(rec.url)
+    await file.loadAttributes()
+    if (file.directory) {
+      const files = (file.children || []).filter((f) => !f.directory)
+      if (files.length !== 1) throw new Error('ссылка ведёт на папку с несколькими файлами — нужна ссылка на сам файл')
+      file = files[0]
+    }
+  } catch (err) {
+    httpHandles.delete(id)
+    if (handle.aborted) return
+    if (!net.isOnline()) return httpRetryLater(id, 'Нет сети')
+    return httpFail(id, megaError(err))
+  }
+  if (handle.aborted) return
+
+  if (!rec.fileName) rec.fileName = file.name || 'download.bin'
+  if (!rec.filePath) rec.filePath = httpTargetPath(id, rec.fileName)
+  let offset = httpFileSize(rec)
+  if (offset > file.size) offset = 0
+  rec.totalSize = file.size
+  rec.downloaded = offset
+  rec.lastBytes = offset
+  rec.lastTime = Date.now()
+  rec.waiting = false
+
+  const stream = file.download({ start: offset, maxConnections: 4 })
+  handle.req = { destroy: () => stream.destroy() }
+  const out = fs.createWriteStream(rec.filePath, { flags: offset > 0 ? 'a' : 'w' })
+  rec.writer = new Promise((resolve) => out.once('close', resolve))
+  let failed = false
+  out.on('error', (err) => {
+    failed = true
+    handle.aborted = true
+    stream.destroy()
+    httpFail(id, err.message)
+  })
+  stream.on('data', (chunk) => {
+    rec.downloaded += chunk.length
+    rec.retries = 0
+    trackProgress(rec)
+  })
+  stream.on('error', (err) => {
+    if (handle.aborted || failed) return
+    failed = true
+    stream.unpipe(out)
+    out.end()
+    httpHandles.delete(id)
+    const message = megaError(err)
+    rec.writer.then(() => (/лимит|удалён|ключа/.test(message) ? httpFail(id, message) : httpRetryLater(id, message)))
+  })
+  stream.pipe(out)
+  out.on('finish', () => {
+    if (handle.aborted || failed) return
+    rec.downloadSpeed = 0
+    rec.eta = 0
+    httpHandles.delete(id)
+    if (rec.downloaded < rec.totalSize) {
+      rec.writer.then(() => httpRetryLater(id, 'Соединение потеряно'))
+      return
+    }
+    ensureArchiveExtension(rec)
+    rec.status = 'completed'
+    rec.waiting = false
+    broadcastDownloads()
+  })
+}
+
+// --- Встроенное окно для сервисов без открытого API (Gofile, Mixdrop и др.) ---
+// Пользователь сам нажимает «Скачать» на странице сервиса (капчи, ожидание — как в браузере),
+// а лаунчер перехватывает файл и дальше ставит игру как обычную загрузку.
+// Окно без preload и в отдельной сессии: у страниц сервиса нет доступа к лаунчеру.
+
+const FILEHOST_PARTITION = 'persist:lustre-filehosts'
+
+function baseDomain(host) {
+  return String(host || '').split('.').slice(-2).join('.')
+}
+
+function openHostBrowser({ url, gameId, gameTitle }) {
+  if (!/^https?:\/\//i.test(String(url || ''))) return { error: 'Некорректная ссылка' }
+  const site = baseDomain(hosts.hostOf(url))
+  const label = hosts.hostLabel(url)
+  const win = new BrowserWindow({
+    width: 1180, height: 820, minWidth: 720, minHeight: 520,
+    title: `Скачивание «${gameTitle || 'игры'}» с ${label}`,
+    autoHideMenuBar: true, backgroundColor: '#ffffff', icon: APP_ICON,
+    webPreferences: { partition: FILEHOST_PARTITION, sandbox: true, contextIsolation: true, nodeIntegration: false },
+  })
+  win.setMenu(null)
+  externalContents.add(win.webContents)
+  // рекламные всплывающие окна не открываем; переход внутри того же сервиса — в этом окне
+  win.webContents.setWindowOpenHandler(({ url: next }) => {
+    if (baseDomain(hosts.hostOf(next)) === site) win.loadURL(next)
+    return { action: 'deny' }
+  })
+  win.webContents.on('page-title-updated', (e) => e.preventDefault())
+
+  const ses = session.fromPartition(FILEHOST_PARTITION)
+  let captured = false
+  const onWillDownload = (_e, item, contents) => {
+    if (contents !== win.webContents || captured) return
+    captured = true
+    const id = 'http:' + crypto.createHash('md5').update(`${item.getURL()}|${Date.now()}`).digest('hex').slice(0, 16)
+    const fileName = item.getFilename() || 'download.bin'
+    const rec = {
+      id, gameId, gameTitle: gameTitle || fileName, url: item.getURL(), kind: 'browser', engine: 'browser',
+      fileName, filePath: httpTargetPath(id, fileName), hintName: fileName, refreshFrom: '',
+      downloaded: 0, totalSize: item.getTotalBytes(), downloadSpeed: 0, eta: 0,
+      status: 'downloading', error: null, addedAt: Date.now(), lastBytes: 0, lastTime: Date.now(), item,
+    }
+    item.setSavePath(rec.filePath)
+    item.on('updated', (_ev, state) => {
+      rec.totalSize = item.getTotalBytes()
+      rec.downloaded = item.getReceivedBytes()
+      rec.waiting = state === 'interrupted'
+      if (state === 'interrupted') rec.downloadSpeed = 0
+      trackProgress(rec)
+    })
+    item.once('done', (_ev, state) => {
+      rec.item = null
+      if (!win.isDestroyed()) win.destroy()
+      if (!httpDownloads.has(id)) return // загрузку удалили
+      if (state === 'completed') {
+        rec.downloaded = rec.totalSize = item.getReceivedBytes()
+        ensureArchiveExtension(rec)
+        rec.status = 'completed'
+        rec.waiting = false
+        rec.downloadSpeed = 0
+        broadcastDownloads()
+      } else {
+        httpFail(id, state === 'cancelled' ? 'Загрузка отменена' : 'Загрузка прервалась — скачайте заново')
+      }
+    })
+    httpDownloads.set(id, rec)
+    broadcastDownloads()
+    // окно больше не нужно; скрываем, а не закрываем, пока файл качается
+    win.hide()
+    if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus() }
+  }
+  ses.on('will-download', onWillDownload)
+  win.on('closed', () => ses.removeListener('will-download', onWillDownload))
+  win.loadURL(url, { userAgent: hosts.BROWSER_UA })
+  return { browser: true, host: label }
 }
 
 // --- GAME INSTALLATION ---
@@ -1398,7 +1641,8 @@ async function installGameImpl(gameId) {
       playtimeMs: 0,
     }
     registerGame(entry)
-    sendInstallProgress({ gameId, phase: 'done', percent: 100 })
+    // catalogId — id игры в каталоге (для статистики установок), gameId — id скачивания
+    sendInstallProgress({ gameId, catalogId, phase: 'done', percent: 100 })
     // Убираем торрент/запись загрузки и временные файлы
     await dropDownload(gameId, contentPath)
     return entry
@@ -1668,7 +1912,7 @@ ipcMain.handle('set-game-exe', (e, id, exePath) => {
   }
   registerGame(entry)
   // Установка завершена вручную — карточка загрузки помечается как выполненная
-  sendInstallProgress({ gameId: id, phase: 'done', percent: 100 })
+  sendInstallProgress({ gameId: id, catalogId: entry.catalogId, phase: 'done', percent: 100 })
   return { ok: true, entry }
 })
 ipcMain.handle('create-shortcut', (e, id) => {

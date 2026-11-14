@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import {
-  FileText, Gamepad2, Info, LifeBuoy, Library, LogOut, Plus, Scale, Settings, Shield,
+  FileText, Gamepad2, Info, LifeBuoy, Library, LogOut, Plus, RefreshCcw, Scale, Settings, Shield,
   ShieldAlert, ShieldCheck, Store, User, UserPlus, Users, WifiOff, X,
 } from 'lucide-react';
 import { hasAdmin } from '../../../admin';
@@ -76,6 +76,7 @@ export function logoMenu(go: Go, logout: () => void, offline: OfflineMenuState, 
       { label: 'Все игры', icon: <Gamepad2 size={14} />, onClick: () => go('/admin/games') },
       { label: 'Добавить игру', icon: <Plus size={14} />, onClick: () => go('/add-game') },
       { label: 'Управление магазином', icon: <Store size={14} />, onClick: () => go('/admin-shop') },
+      { label: 'Обновления игр', icon: <RefreshCcw size={14} />, onClick: () => go('/admin/game-updates') },
     );
   }
   if (roles.admin && hasAdmin) entries.push({ label: 'Админ-панель', icon: <ShieldCheck size={14} />, onClick: () => go('/admin') });

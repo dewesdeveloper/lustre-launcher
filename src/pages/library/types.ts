@@ -40,7 +40,7 @@ export interface InstalledGame {
 
 export interface Tag { id: number; name: string }
 
-export type GameSourceKind = 'torrent' | 'direct' | 'pixeldrain';
+export type GameSourceKind = 'torrent' | 'direct' | 'pixeldrain' | 'itch' | 'mega' | 'mediafire' | 'browser';
 
 export interface GameSource {
   id: number;

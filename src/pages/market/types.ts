@@ -29,7 +29,7 @@ export interface Tag {
   name: string;
 }
 
-export type GameSourceKind = 'torrent' | 'direct' | 'pixeldrain' | 'itch';
+export type GameSourceKind = 'torrent' | 'direct' | 'pixeldrain' | 'itch' | 'mega' | 'mediafire' | 'browser';
 
 export interface GameSource {
   id: number;

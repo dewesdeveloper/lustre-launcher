@@ -28,6 +28,7 @@ import ScrollTopButton from './components/ScrollTopButton';
 import { useSearchHotkey } from './utils/searchHotkey';
 import ThemeDecor from './components/ThemeDecor';
 import { applyLauncherBackground } from './components/launcherBackground';
+import { reportDownload } from './api/downloadStats';
 
 export default function MainLayout({ children }: { children?: ReactNode }) {
   const { user } = useAuth();
@@ -52,6 +53,15 @@ export default function MainLayout({ children }: { children?: ReactNode }) {
     });
     return () => off?.();
   }, [navigate]);
+
+  // Завершённая установка — в статистику скачиваний (каталожный id приходит из electron)
+  useEffect(() => {
+    const electron = (window as any).electron;
+    const off = electron?.onInstallProgress?.((p: { phase?: string; catalogId?: number }) => {
+      if (p?.phase === 'done' && p.catalogId) reportDownload(p.catalogId, 'installed');
+    });
+    return () => off?.();
+  }, []);
 
   // ===== Учёт времени в игре на аккаунте =====
   // Копим сессию локально и отправляем на сервер каждую минуту, при выходе из

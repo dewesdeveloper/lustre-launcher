@@ -21,6 +21,7 @@ import { fetchItchFiles, type ItchFile } from '../market/itchFiles';
 import { gameBannerUrl, gameBannerFallback } from '../../utils/gameBanner';
 import { formatPlaytime } from '../../utils/playtime';
 import { safeHtml } from '../../utils/safeHtml';
+import { reportDownload } from '../../api/downloadStats';
 
 const tokenize = (s: string) =>
   new Set(s.toLowerCase().split(/[^a-z0-9а-яё]+/).filter(t => t.length >= 3));
@@ -256,6 +257,7 @@ export default function LibraryGamePage() {
           setInstalling(false);
           return;
         }
+        reportDownload(Number(id), 'started', source.kind || 'torrent');
       } catch (e: any) {
         console.error('download failed:', e);
         setInstallError(e?.response?.data?.error || 'Не удалось добавить загрузку');
