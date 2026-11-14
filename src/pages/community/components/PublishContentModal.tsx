@@ -1,7 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { IconMessage2, IconPhoto, IconTools, IconX } from '@tabler/icons-react';
 import { addCommunityImage, addWorkshopItem, createCommunityPost, type Community } from '../../../api/community';
+import { categoryLabel } from '../formats';
 import ImageUpload from '../../../components/ImageUpload';
 import Select from '../../../components/ui/Select';
 import CharCounter from '../../../components/CharCounter';
@@ -95,8 +97,9 @@ export default function PublishContentModal({ communities, initialTab = 'image',
     setError('');
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6" onClick={onClose}>
+  // портал в body — иначе окно привязывается к прокручиваемой странице, а не к экрану
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-6" onClick={onClose}>
       <div className="tl-panel custom-scrollbar max-h-[90vh] w-full max-w-xl overflow-y-auto" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal>
         <header className="flex items-start justify-between px-8 pb-2 pt-8">
           <div>
@@ -124,7 +127,7 @@ export default function PublishContentModal({ communities, initialTab = 'image',
                   panelClassName={SELECT_PANEL}
                   options={[
                     { value: '', label: 'Выберите сообщество...' },
-                    ...communities.map((c) => ({ value: c.ID, label: `${c.name} — ${c.game?.title}` })),
+                    ...communities.map((c) => ({ value: c.ID, label: `${c.name} — ${categoryLabel(c)}` })),
                   ]}
                 />
               </label>
@@ -183,6 +186,7 @@ export default function PublishContentModal({ communities, initialTab = 'image',
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -7,6 +7,8 @@ export interface PrivacySettings {
   friends_visibility: 'public' | 'friends' | 'private';
   /** Кто видит ленту активности в профиле */
   activity_visibility: 'public' | 'friends' | 'private';
+  /** кто видит игры в профиле (старые серверы поля не присылают) */
+  library_visibility?: 'public' | 'friends' | 'private';
   friend_requests: 'everyone' | 'nobody';
   /** pro — друзья и пользователи с Lustre Pro (выбрать можно и без своей подписки) */
   dms: 'everyone' | 'pro' | 'friends';

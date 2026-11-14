@@ -1,5 +1,6 @@
 import { IconAlertTriangle, IconCheck, IconLock, IconWorld } from '@tabler/icons-react';
 import type { InvitePreview } from '../../../api/community';
+import { formatOf } from '../formats';
 
 type InviteCardProps = {
   loading: boolean;
@@ -37,7 +38,7 @@ export default function InviteCard({ loading, preview, joining, joined, error, o
       <p className="tl-head tl-muted mb-3 text-[10px] font-bold uppercase tracking-[.25em]">Вас пригласили в сообщество</p>
       <h1 className="mb-5 break-words text-[26px] text-white" style={{ textShadow: 'var(--glow)' }}>{preview.name}</h1>
       <div className="mb-8 flex flex-wrap justify-center gap-2">
-        <span className="tl-chip age">{preview.game_title}</span>
+        <span className="tl-chip age">{preview.game_title || formatOf(preview).label}</span>
         <span className="tl-chip rare">{preview.theme_name}</span>
         {preview.is_private
           ? <span className="tl-chip warn inline-flex items-center gap-1.5"><IconLock size={10} /> Приватное</span>

@@ -14,6 +14,8 @@ interface CatalogToolbarProps {
   selectedLang: string;
   onClearLang: () => void;
   onClearAll: () => void;
+  /** активные дополнительные фильтры (год, язык, разработчик…) */
+  extraChips?: { label: string; onRemove: () => void }[];
   pageSize: number;
   onChangePageSize: (size: number) => void;
   view: 'grid' | 'list';
@@ -44,12 +46,13 @@ const CatalogToolbar = ({
   selectedLang,
   onClearLang,
   onClearAll,
+  extraChips = [],
   pageSize,
   onChangePageSize,
   view,
   onChangeView,
 }: CatalogToolbarProps) => {
-  const chipCount = (searchQuery ? 1 : 0) + (selectedRating ? 1 : 0) + selectedTags.length + (selectedLang ? 1 : 0);
+  const chipCount = (searchQuery ? 1 : 0) + (selectedRating ? 1 : 0) + selectedTags.length + (selectedLang ? 1 : 0) + extraChips.length;
 
   return (
     <>
@@ -102,6 +105,7 @@ const CatalogToolbar = ({
           {selectedRating && <Chip label={selectedRating} onRemove={onClearRating} />}
           {selectedTags.map((tag) => <Chip key={tag} label={tag} onRemove={() => onToggleTag(tag)} />)}
           {selectedLang && <Chip label={selectedLang} onRemove={onClearLang} tone="common" />}
+          {extraChips.map((c) => <Chip key={c.label} label={c.label} onRemove={c.onRemove} tone="common" />)}
           {chipCount > 1 && (
             <button type="button" onClick={onClearAll} className="tl-head text-[10px] text-accent hover:text-white font-bold uppercase tracking-widest ml-1">
               Сбросить всё

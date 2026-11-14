@@ -21,6 +21,7 @@ export default function VoiceInviteToast() {
         title: 'Приглашение в голосовой канал',
         body: `${who} зовёт вас в «${invite.channel.name}»`,
         tag: `lh-voice-invite-${invite.channel.id}`,
+        kind: 'call',
         category: 'messages',
       });
     }

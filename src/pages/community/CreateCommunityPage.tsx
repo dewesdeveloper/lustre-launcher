@@ -11,7 +11,8 @@ import { EMPTY_DRAFT, type CommunityDraft } from './components/communityDraft';
 /** Что не так с черновиком (первое, что нужно исправить), или null */
 function problemOf(draft: CommunityDraft): string | null {
   if (!draft.name.trim()) return 'Введите название сообщества';
-  if (!draft.gameId) return 'Выберите категорию (игру)';
+  if (!draft.format) return 'Выберите формат сообщества';
+  if (draft.format === 'games' && !draft.gameId) return 'Выберите игру';
   if (!draft.themeId) return 'Выберите тематику';
   return null;
 }
@@ -44,7 +45,7 @@ export default function CreateCommunityPage() {
   const submit = async () => {
     const problem = problemOf(draft);
     setError(problem ?? '');
-    if (problem || draft.gameId === null || draft.themeId === null) return;
+    if (problem || draft.format === null || draft.themeId === null) return;
 
     setSubmitting(true);
     try {
@@ -52,7 +53,8 @@ export default function CreateCommunityPage() {
         name: draft.name.trim(),
         description: draft.description.trim(),
         cover_url: draft.coverUrl,
-        game_id: draft.gameId,
+        format: draft.format,
+        ...(draft.format === 'games' && draft.gameId ? { game_id: draft.gameId } : {}),
         theme_id: draft.themeId,
         is_private: draft.isPrivate,
       });

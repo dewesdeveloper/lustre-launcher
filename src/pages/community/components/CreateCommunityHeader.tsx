@@ -13,7 +13,7 @@ export default function CreateCommunityHeader({ onBack }: { onBack: () => void }
       </button>
       <div className="absolute left-1/2 -translate-x-1/2 text-center">
         <h1 className="text-[20px] text-white">Новое <span className="text-accent">сообщество</span></h1>
-        <p className="tl-head tl-muted mt-1 text-[10px] font-bold uppercase">Категория — игра из каталога, тематика — из справочника</p>
+        <p className="tl-head tl-muted mt-1 text-[10px] font-bold uppercase">Формат, тематика и вид — а игру выберите, если сообщество о ней</p>
       </div>
     </header>
   );

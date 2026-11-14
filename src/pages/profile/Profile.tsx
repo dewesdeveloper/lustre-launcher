@@ -48,6 +48,8 @@ export default function ProfilePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get('tab') || 'overview';
   const [library, setLibrary] = useState<any[] | null>(null);
+  // библиотека закрыта настройкой приватности владельца — текст причины с сервера
+  const [libraryHidden, setLibraryHidden] = useState('');
   const [inventory, setInventory] = useState<ShopItem[] | null>(null);
 
   const isOwnProfile = !username || username === currentUser?.username;
@@ -72,7 +74,10 @@ export default function ProfilePage() {
     if (!name || !canViewContent) return;
     if ((activeTab === 'games' || isOwnProfile) && library === null) {
       const req = isOwnProfile ? api.get('/library/') : api.get(`/library/user/${name}`);
-      req.then(r => setLibrary(r.data || [])).catch(() => setLibrary([]));
+      req.then(r => { setLibraryHidden(''); setLibrary(r.data || []); }).catch((err) => {
+        setLibraryHidden(err?.response?.data?.code === 'library_private' ? (err.response.data.error || 'Библиотека скрыта') : '');
+        setLibrary([]);
+      });
     }
     if (activeTab === 'inventory' && inventory === null) {
       api.get(`/shop/user/${name}`).then(r => setInventory(r.data || [])).catch(() => setInventory([]));
@@ -304,7 +309,7 @@ export default function ProfilePage() {
             )}
 
             {activeTab === 'games' && (
-              <ProfileGamesTab library={library} onGameClick={(gameId) => navigate(`/games/${gameId}`)} />
+              <ProfileGamesTab library={library} hiddenReason={libraryHidden} onGameClick={(gameId) => navigate(`/games/${gameId}`)} />
             )}
 
             {activeTab === 'inventory' && (

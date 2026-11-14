@@ -1,5 +1,6 @@
 import { IconLock, IconUsers } from '@tabler/icons-react';
 import type { Community } from '../../../api/community';
+import { categoryLabel } from '../formats';
 
 type CommunityDetailHeroProps = { community: Community; creatorName: string; creatorAvatar: string };
 
@@ -15,7 +16,7 @@ export default function CommunityDetailHero({ community: c, creatorName, creator
         <div className="absolute inset-0 bg-gradient-to-t from-[#060309] via-[#060309]/50 to-transparent" />
         <div className="absolute bottom-6 left-8 right-8 z-[2]">
           <div className="mb-3 flex flex-wrap gap-2">
-            {c.game?.title && <span className="tl-chip age">{c.game.title}</span>}
+            <span className="tl-chip age">{categoryLabel(c)}</span>
             {c.theme?.name && <span className="tl-chip rare">{c.theme.name}</span>}
             {c.is_private && <span className="tl-chip warn inline-flex items-center gap-1.5"><IconLock size={10} /> Приватное</span>}
           </div>

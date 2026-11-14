@@ -70,7 +70,7 @@ function forumOf(game: CommunityGame, communities: Community[], posts: PostsByCo
 const ORDER: Record<SortOption, (a: GameForum, b: GameForum) => number> = {
   popular: (a, b) => b.members - a.members,
   discussions: (a, b) => b.discussions - a.discussions,
-  alpha: (a, b) => a.game.title.localeCompare(b.game.title, 'ru'),
+  alpha: (a, b) => (a.game?.title ?? '').localeCompare(b.game?.title ?? '', 'ru'),
 };
 
 function Skeleton({ rows, height }: { rows: number; height: string }) {

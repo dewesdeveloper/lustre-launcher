@@ -1,12 +1,17 @@
+import { createPortal } from 'react-dom';
 import { IconCopy, IconX } from '@tabler/icons-react';
 import { buildInviteLink } from '../../../api/community';
 
 type InviteModalProps = { name: string; code: string; copied: boolean; onClose: () => void; onCopy: () => void };
 
-/** Окно со ссылкой-приглашением в приватное сообщество (видит только владелец). */
+/**
+ * Окно со ссылкой-приглашением в приватное сообщество (видит только владелец).
+ * Через портал в body: внутри анимированной страницы fixed-окно привязывалось к ней,
+ * а не к экрану, — оставался только чёрный фон, а само окно уезжало за край.
+ */
 export default function InviteModal({ name, code, copied, onClose, onCopy }: InviteModalProps) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6" onClick={onClose}>
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-6" onClick={onClose}>
       <div role="dialog" aria-modal className="tl-panel w-full max-w-xl p-8" onClick={(e) => e.stopPropagation()}>
         <header className="mb-1 flex items-start justify-between">
           <div>
@@ -25,6 +30,7 @@ export default function InviteModal({ name, code, copied, onClose, onCopy }: Inv
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

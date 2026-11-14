@@ -95,6 +95,20 @@ export default function PrivacyTab() {
       </div>
 
       <div className="tl-panel p-[22px]">
+        <h3 className="tl-head text-[11px] font-bold text-white mb-1" style={{ textShadow: 'var(--glow-sm)' }}>КОМУ ВИДНО БИБЛИОТЕКУ</h3>
+        <p className="tl-term text-[16px] tl-muted mb-4">Кто видит твои игры на вкладке «Игры» в профиле.</p>
+        <Seg
+          value={p.library_visibility ?? 'friends'}
+          onChange={(v) => upd({ library_visibility: v })}
+          options={[
+            { id: 'public', label: 'Все пользователи' },
+            { id: 'friends', label: 'Только друзья' },
+            { id: 'private', label: 'Только я' },
+          ]}
+        />
+      </div>
+
+      <div className="tl-panel p-[22px]">
         <h3 className="tl-head text-[11px] font-bold text-white mb-1" style={{ textShadow: 'var(--glow-sm)' }}>ЛЕНТА АКТИВНОСТИ</h3>
         <p className="tl-term text-[16px] tl-muted mb-4">Кто видит твою активность в профиле (запуски игр, значки, комментарии).</p>
         <Seg

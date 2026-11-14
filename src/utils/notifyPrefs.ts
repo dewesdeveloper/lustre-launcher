@@ -4,11 +4,13 @@
 import { useEffect, useState } from 'react';
 import notifSoundUrl from '../assets/sounds/received-mail-notification.mp3';
 
-export type NotifyCategory = 'messages' | 'groups' | 'friends' | 'calls' | 'missed';
+export type NotifyCategory = 'messages' | 'groups' | 'friends' | 'friendGame' | 'calls' | 'missed';
 
 export interface NotifyPrefs {
-  /** Системные уведомления Windows вообще */
+  /** Всплывающие уведомления вообще */
   enabled: boolean;
+  /** Вид: свои всплывашки Lustre в правом нижнем углу (как в Steam) или системные Windows */
+  style: 'lustre' | 'windows';
   /** «Не беспокоить»: ни всплывающих уведомлений, ни звуков (окна звонков остаются) */
   dnd: boolean;
   categories: Record<NotifyCategory, boolean>;
@@ -26,8 +28,9 @@ const EVENT = 'lh-notify-prefs';
 
 export const DEFAULT_NOTIFY_PREFS: NotifyPrefs = {
   enabled: true,
+  style: 'lustre',
   dnd: false,
-  categories: { messages: true, groups: true, friends: true, calls: true, missed: true },
+  categories: { messages: true, groups: true, friends: true, friendGame: true, calls: true, missed: true },
   preview: true,
   sound: true,
   volume: 60,

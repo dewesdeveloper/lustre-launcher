@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   buildInviteLink, deleteCommunity, getCommunities, getCommunityInvite, getCommunityStats,
@@ -11,11 +11,13 @@ import Pagination from '../../components/ui/Pagination';
 import { canModerate } from '../../utils/roles';
 import { copyText } from '../../utils/clipboard';
 import CommunityHero from './components/CommunityHero';
-import CommunityList from './components/CommunityList';
+import CommunityList, {
+  EMPTY_COMMUNITY_FILTERS, matchCommunity, type CommunityFilters, type CommunitySort, type FormatFilter,
+} from './components/CommunityList';
 import CommunityFeed, { type CommunityFeedKind, type PublishTab } from './components/CommunityFeeds';
-import StatsPanel from './components/StatsPanel';
 import PublishContentModal from './components/PublishContentModal';
 import InviteModal from './components/InviteModal';
+import { formatOf } from './formats';
 
 const STATS_POLL_MS = 60_000;
 
@@ -56,7 +58,10 @@ export default function CommunityPage() {
   const [communities, setCommunities] = useState<Community[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(12);
+  const [filter, setFilter] = useState<FormatFilter>('all');
+  const [sort, setSort] = useState<CommunitySort>('new');
+  const [filters, setFilters] = useState<CommunityFilters>(EMPTY_COMMUNITY_FILTERS);
   const [publishTab, setPublishTab] = useState<PublishTab | null>(null);
   const [invite, setInvite] = useState<Invite | null>(null);
   const [copied, setCopied] = useState(false);
@@ -76,9 +81,27 @@ export default function CommunityPage() {
     navigate(location.pathname, { replace: true }); // чтобы при возврате окно не всплыло снова
   }, [location.state, location.pathname, navigate]);
 
-  const pages = Math.max(1, Math.ceil(communities.length / pageSize));
+  // фильтр по формату и сортировка; «самое большое сообщество» — крупно над сеткой (только без фильтра)
+  const filtered = useMemo(() => {
+    const list = communities.filter((c) =>
+      (filter === 'all' ? true : filter === 'mine' ? c.creator_id === user?.id : formatOf(c).id === filter)
+      && matchCommunity(c, filters));
+    const byNew = (a: Community, b: Community) => b.ID - a.ID;
+    if (sort === 'popular') list.sort((a, b) => b.members_count - a.members_count || byNew(a, b));
+    else if (sort === 'alpha') list.sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    else list.sort(byNew);
+    return list;
+  }, [communities, filter, filters, sort, user?.id]);
+  const featured = useMemo(() => {
+    const advActive = filters.query || filters.themeId || filters.gameId || filters.visibility || filters.size;
+    if (filter !== 'all' || advActive || communities.length < 4) return null;
+    return [...communities].filter((c) => !c.is_private).sort((a, b) => b.members_count - a.members_count)[0] || null;
+  }, [communities, filter, filters]);
+  const rest = featured ? filtered.filter((c) => c.ID !== featured.ID) : filtered;
+
+  const pages = Math.max(1, Math.ceil(rest.length / pageSize));
   const current = Math.min(page, pages);
-  const shown = communities.slice((current - 1) * pageSize, current * pageSize);
+  const shown = rest.slice((current - 1) * pageSize, current * pageSize);
 
   const switchTab = (id: string) => {
     if (id === 'discussions') {
@@ -119,21 +142,36 @@ export default function CommunityPage() {
   };
 
   return (
-    <div className="mx-auto max-w-[1600px] p-8 text-left animate-in fade-in duration-700">
-      <CommunityHero activeTab={tab} onTabSelect={switchTab} />
+    <div className="mx-auto max-w-[1600px] p-8 text-left">
+      <CommunityHero
+        activeTab={tab}
+        onTabSelect={switchTab}
+        stats={stats}
+        onCreate={user ? () => navigate('/community/create') : null}
+        onPublish={user ? () => setPublishTab('image') : null}
+        query={filters.query}
+        onQuery={(query) => { setFilters((f) => ({ ...f, query })); setPage(1); }}
+        matches={filters.query.trim() ? communities.filter((c) => matchCommunity(c, { ...EMPTY_COMMUNITY_FILTERS, query: filters.query })) : []}
+        onOpen={(c) => navigate(`/community/${c.ID}`)}
+      />
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_330px]">
-        <main className="space-y-8">
+      <main className="space-y-8">
           {tab === 'trending' ? (
             <>
               <CommunityList
                 communities={shown}
-                total={communities.length}
+                all={communities}
+                total={filtered.length}
                 loading={loading}
                 userId={user?.id}
                 isModerator={canModerate(user?.role)}
-                onPublish={() => setPublishTab('image')}
-                onCreate={() => navigate('/community/create')}
+                featured={current === 1 ? featured : null}
+                filter={filter}
+                onFilter={(f) => { setFilter(f); setPage(1); }}
+                filters={filters}
+                onFilters={(patch) => { setFilters((f) => ({ ...f, ...patch })); setPage(1); }}
+                sort={sort}
+                onSort={(v) => { setSort(v); setPage(1); }}
                 onDelete={remove}
                 onInvite={showInvite}
                 onOpen={(c) => navigate(`/community/${c.ID}`)}
@@ -145,12 +183,7 @@ export default function CommunityPage() {
           ) : (
             <CommunityFeed kind={tab as CommunityFeedKind} onPublish={user ? setPublishTab : null} />
           )}
-        </main>
-
-        <aside className="space-y-8">
-          <StatsPanel stats={stats} />
-        </aside>
-      </div>
+      </main>
 
       {publishTab && <PublishContentModal communities={communities} initialTab={publishTab} onClose={() => setPublishTab(null)} />}
 

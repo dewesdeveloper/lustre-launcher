@@ -31,6 +31,8 @@ contextBridge.exposeInMainWorld('electron', {
     return () => ipcRenderer.removeListener('overlay-toast', handler);
   },
   overlayToastsEmpty: () => ipcRenderer.send('overlay-toasts-empty'),
+  overlayToastsHover: (hover) => ipcRenderer.send('overlay-toasts-hover', !!hover),
+  overlayToastClick: (payload) => ipcRenderer.send('overlay-toast-click', payload ?? null),
   overlayScreenshot: () => ipcRenderer.invoke('overlay-screenshot'),
   overlayListScreenshots: () => ipcRenderer.invoke('overlay-list-screenshots'),
   overlayOpenScreenshot: (file) => ipcRenderer.send('overlay-open-screenshot', file),

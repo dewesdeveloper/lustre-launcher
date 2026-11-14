@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { Search, ChevronDown, X } from 'lucide-react';
 import { AGE_RATINGS } from '../../constants';
+import { KIND_OPTIONS, RU_OPTIONS, SOURCE_LABEL, YEAR_OPTIONS, type ExtraFilters } from './extraFilters';
 
 const TagPill = ({ tag, selected, onToggle }: { tag: string; selected: boolean; onToggle: (t: string) => void }) => (
   <button
@@ -26,6 +27,32 @@ interface CatalogFiltersProps {
   selectedLang: string;
   onChangeLang: (lang: string) => void;
   hideAdult: boolean;
+  /** Доп. фильтры (год, русский язык, разработчик, источник…) — только в каталоге магазина */
+  extra?: ExtraFilters;
+  onChangeExtra?: (patch: Partial<ExtraFilters>) => void;
+  /** разработчики и издатели каталога */
+  developers?: string[];
+  /** какие виды источников есть в каталоге */
+  sourceKinds?: string[];
+}
+
+/** Ряд переключателей «выбран один или ни одного» */
+function ChipGroup<T extends string>({ options, value, onChange }: { options: { id: T; label: string }[]; value: T | ''; onChange: (v: T | '') => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {options.map((o) => (
+        <button
+          type="button"
+          key={o.id}
+          aria-pressed={value === o.id}
+          onClick={() => onChange(value === o.id ? '' : o.id)}
+          className={`tl-chip tl-tagpick ${value === o.id ? 'on' : ''}`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 const LABEL = 'tl-head text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--muted)] mb-3 block';
@@ -43,6 +70,10 @@ const CatalogFilters = ({
   selectedLang,
   onChangeLang,
   hideAdult,
+  extra,
+  onChangeExtra = () => {},
+  developers = [],
+  sourceKinds = [],
 }: CatalogFiltersProps) => {
   const [tagsOpen, setTagsOpen] = useState(false);
   const [tagSearch, setTagSearch] = useState('');
@@ -112,10 +143,40 @@ const CatalogFilters = ({
           </div>
         </div>
 
+        {/* Обычные / NSFW (NSFW скрыт настройкой «Скрывать 18+» — тогда и выбирать нечего) */}
+        {extra && !hideAdult && <div>
+          <span className={LABEL}>Тип игр</span>
+          <ChipGroup options={KIND_OPTIONS} value={extra.kind} onChange={(kind) => onChangeExtra({ kind })} />
+        </div>}
+
+        {/* Год выхода */}
+        {extra && <div>
+          <span className={LABEL}>Год выхода</span>
+          <ChipGroup options={YEAR_OPTIONS} value={extra.year} onChange={(year) => onChangeExtra({ year })} />
+        </div>}
+
         {/* Теги */}
         {visibleTags.length > 0 && (
           <div>
-            <span className={LABEL}>Теги</span>
+            <div className="mb-3 flex items-center justify-between">
+              <span className={`${LABEL} mb-0!`}>Теги</span>
+              {extra && selectedTags.length > 1 && (
+                <div className="flex border border-[var(--line)] text-[10px] font-bold uppercase" role="group" aria-label="Режим тегов">
+                  {(['all', 'any'] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      aria-pressed={extra.tagMode === m}
+                      onClick={() => onChangeExtra({ tagMode: m })}
+                      title={m === 'all' ? 'Игра должна иметь все выбранные теги' : 'Достаточно любого из выбранных тегов'}
+                      className={`px-2 py-1 ${extra.tagMode === m ? 'bg-accent/15 text-accent' : 'text-[var(--muted)] hover:text-white'}`}
+                    >
+                      {m === 'all' ? 'Все' : 'Любой'}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             {collapseTags ? (
               <div className="relative" ref={tagsRef}>
                 <button
@@ -185,6 +246,67 @@ const CatalogFilters = ({
               {allLanguages.map((l) => <option key={l} value={l}>{l}</option>)}
             </select>
           </div>
+        )}
+
+{extra && (
+          <>
+        {/* Русский язык */}
+        <div>
+          <span className={LABEL}>Русский язык</span>
+          <ChipGroup options={RU_OPTIONS} value={extra.ru} onChange={(ru) => onChangeExtra({ ru })} />
+        </div>
+
+        {/* Разработчик / издатель */}
+        {developers.length > 0 && (
+          <div>
+            <span className={LABEL}>Разработчик или издатель</span>
+            <input
+              list="lh-catalog-developers"
+              className="tl-field"
+              placeholder="Начните вводить…"
+              value={extra.developer}
+              onChange={(e) => onChangeExtra({ developer: e.target.value })}
+            />
+            <datalist id="lh-catalog-developers">
+              {developers.map((d) => <option key={d} value={d} />)}
+            </datalist>
+          </div>
+        )}
+
+        {/* Источник скачивания */}
+        {sourceKinds.length > 1 && (
+          <div>
+            <span className={LABEL}>Где скачать</span>
+            <div className="flex flex-wrap gap-1.5">
+              {sourceKinds.map((k) => {
+                const on = extra.sources.includes(k);
+                return (
+                  <button
+                    type="button"
+                    key={k}
+                    aria-pressed={on}
+                    onClick={() => onChangeExtra({ sources: on ? extra.sources.filter((x) => x !== k) : [...extra.sources, k] })}
+                    className={`tl-chip tl-tagpick ${on ? 'on' : ''}`}
+                  >
+                    {SOURCE_LABEL[k] || k}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Библиотека */}
+        <label className="flex cursor-pointer items-center gap-2.5">
+          <input
+            type="checkbox"
+            checked={extra.hideOwned}
+            onChange={(e) => onChangeExtra({ hideOwned: e.target.checked })}
+            className="h-4 w-4 accent-[color:var(--color-accent)]"
+          />
+          <span className="tl-term text-[15px] text-[var(--muted)]">Скрыть игры из моей библиотеки</span>
+        </label>
+          </>
         )}
       </div>
     </aside>

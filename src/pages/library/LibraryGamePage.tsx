@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   Play, Loader2, FolderSearch, MonitorSmartphone,
   Building2, Calendar, Shield, Clock, Tag, ShieldCheck } from 'lucide-react';
@@ -23,6 +23,7 @@ import { safeHtml } from '../../utils/safeHtml';
 import { reportDownload } from '../../api/downloadStats';
 import { sourceKeyFor } from '../../api/scanReports';
 import VirusCheckModal from './components/VirusCheckModal';
+import { reportRemoteInstall, type RemoteInstallState } from '../../api/remoteInstall';
 
 const tokenize = (s: string) =>
   new Set(s.toLowerCase().split(/[^a-z0-9а-яё]+/).filter(t => t.length >= 3));
@@ -75,6 +76,16 @@ export default function LibraryGamePage() {
   // Выбор пути скачивания (см. PathPickerModal): до подтверждения откладываем исходную задачу
   const [pathPrompt, setPathPrompt] = useState<{ source: DownloadSource; resolved: boolean; filename: string } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  // Загрузка, поставленная с телефона: её итог (началась / не удалась) уходит обратно на телефон
+  const location = useLocation();
+  const remoteRef = useRef<number | null>(null);
+  const remoteHandledRef = useRef(0);
+  const finishRemote = (status: 'started' | 'failed', err = '') => {
+    const rid = remoteRef.current;
+    if (!rid) return;
+    remoteRef.current = null;
+    reportRemoteInstall(rid, status, err);
+  };
 
   const matchInstalled = useCallback((title: string, list: InstalledGame[]) => {
     const tt = [...tokenize(title)];
@@ -260,18 +271,46 @@ export default function LibraryGamePage() {
         if (res?.error) {
           setInstallError(res.error);
           setInstalling(false);
+          finishRemote('failed', String(res.error));
           return;
         }
         reportDownload(Number(id), 'started', source.kind || 'torrent');
+        finishRemote('started');
       } catch (e: any) {
         console.error('download failed:', e);
         setInstallError(e?.response?.data?.error || 'Не удалось добавить загрузку');
+        finishRemote('failed', e?.response?.data?.error || 'Не удалось добавить загрузку');
         setInstalling(false);
         return;
       }
     }
     navigate('/downloads');
   };
+
+  // Команда с телефона (MainLayout открыл страницу с ней): запускаем загрузку выбранного источника
+  useEffect(() => {
+    const cmd = (location.state as RemoteInstallState | null)?.remoteInstall;
+    if (!cmd || !game || Number(id) !== cmd.game_id || remoteHandledRef.current === cmd.install_id) return;
+    remoteHandledRef.current = cmd.install_id;
+    navigate(location.pathname, { replace: true, state: null });
+    void (async () => {
+      const list: InstalledGame[] = (await electron?.installedGames?.().catch(() => [])) || [];
+      if (matchInstalled(game.title, list)) {
+        reportRemoteInstall(cmd.install_id, 'failed', 'Игра уже установлена на этом компьютере');
+        return;
+      }
+      const source: DownloadSource | undefined = cmd.source_index === -1
+        ? (game.magnet_uri ? { kind: 'torrent', magnet_uri: game.magnet_uri } : undefined)
+        : game.sources?.[cmd.source_index];
+      if (!source) {
+        reportRemoteInstall(cmd.install_id, 'failed', 'Источник игры не найден');
+        return;
+      }
+      remoteRef.current = cmd.install_id;
+      await startDownload(source, false, '', true);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game, location.state]);
 
   const install = async () => {
     // Есть несколько источников — предлагаем выбрать; иначе старый magnet-URI

@@ -16,6 +16,7 @@ import CatalogPagination from '../../components/ui/Pagination';
 import GameCard from './components/catalog/GameCard';
 import GameHoverPreview from '../../components/GameHoverPreview';
 import StoreHero from './components/catalog/StoreHero';
+import { EMPTY_EXTRA, extraActive, extraChips, matchExtra, sourceKinds, type ExtraFilters } from './components/catalog/extraFilters';
 
 type TagInfo = { name: string; category: string };
 
@@ -45,6 +46,10 @@ export const GameCatalog: React.FC = () => {
   const [selectedTags, setSelectedTags] = useState<string[]>(initial?.selectedTags ?? []);
   const [selectedLang, setSelectedLang] = useState<string>(initial?.selectedLang ?? '');
   const [sortBy, setSortBy] = useState<SortKey>(initial?.sortBy ?? 'added-new');
+  const [extra, setExtra] = useState<ExtraFilters>({ ...EMPTY_EXTRA, ...(initial?.extra || {}) });
+  const patchExtra = (patch: Partial<ExtraFilters>) => setExtra((f) => ({ ...f, ...patch }));
+  // id игр из библиотеки — для «Скрыть игры из моей библиотеки» (грузим при включении)
+  const [owned, setOwned] = useState<Set<number>>(new Set());
 
   const [page, setPage] = useState<number>(initial?.page ?? 1);
   // размеры страниц кратны 3 (три колонки сетки); старое сохранённое 20 → 24
@@ -71,13 +76,14 @@ export const GameCatalog: React.FC = () => {
     setSelectedTags(tag ? [tag] : []);
     setSelectedRating('');
     setSelectedLang('');
+    setExtra(EMPTY_EXTRA);
     setSearchParams({}, { replace: true });
   }, [searchParams, setSearchParams]);
 
   // Зеркало view-state в ref: cleanup эффекта видит state первого рендера
   const viewRef = useRef<Record<string, any>>({});
   viewRef.current = {
-    page, searchQuery, selectedRating, selectedTags, selectedLang, sortBy, pageSize, view,
+    page, searchQuery, selectedRating, selectedTags, selectedLang, sortBy, pageSize, view, extra,
     savedAt: Date.now(),
   };
   useEffect(() => () => {
@@ -212,7 +218,28 @@ export const GameCatalog: React.FC = () => {
   useEffect(() => {
     if (isFirstFilterRun.current) { isFirstFilterRun.current = false; return; }
     setPage(1);
-  }, [searchQuery, selectedRating, selectedTags, selectedLang, sortBy, pageSize]);
+  }, [searchQuery, selectedRating, selectedTags, selectedLang, sortBy, pageSize, extra]);
+
+  useEffect(() => {
+    if (!extra.hideOwned) return;
+    let alive = true;
+    api.get('/library/')
+      .then(({ data }) => { if (alive) setOwned(new Set((data || []).map((e: any) => Number(e.game_id)))); })
+      .catch(() => { /* гость или нет сети — фильтр ничего не скрывает */ });
+    return () => { alive = false; };
+  }, [extra.hideOwned]);
+
+  // разработчики и издатели каталога — для фильтра «Разработчик»; источники — какие вообще есть
+  const developers = useMemo(() => {
+    const set = new Set<string>();
+    for (const g of games) { if (g.developer) set.add(g.developer); if (g.publisher) set.add(g.publisher); }
+    return Array.from(set).sort((a, b) => titleCollator.compare(a, b));
+  }, [games]);
+  const sourceKindsAll = useMemo(() => {
+    const set = new Set<string>();
+    for (const g of games) sourceKinds(g).forEach((k) => set.add(k));
+    return Array.from(set);
+  }, [games]);
 
   // При смене страницы прокручиваем к началу каталога (но не при открытии страницы)
   const isFirstPageRun = useRef(true);
@@ -226,9 +253,10 @@ export const GameCatalog: React.FC = () => {
     setSelectedRating('');
     setSelectedTags([]);
     setSelectedLang('');
+    setExtra((f) => ({ ...EMPTY_EXTRA, tagMode: f.tagMode }));
   };
 
-  const hasFilters = !!(searchQuery || selectedRating || selectedTags.length > 0 || selectedLang);
+  const hasFilters = !!(searchQuery || selectedRating || selectedTags.length > 0 || selectedLang || extraActive(extra));
 
   const matchedGames = useMemo(() => {
     const contentFilters = getStoreFilters();
@@ -266,8 +294,10 @@ export const GameCatalog: React.FC = () => {
       if (selectedRating && game.age_rating !== selectedRating) return false;
       if (selectedTags.length > 0) {
         const gameTagNames = game.tags?.map((t: any) => t.name) || [];
-        if (!selectedTags.every((tag) => gameTagNames.includes(tag))) return false;
+        const has = (tag: string) => gameTagNames.includes(tag);
+        if (extra.tagMode === 'any' ? !selectedTags.some(has) : !selectedTags.every(has)) return false;
       }
+      if (!matchExtra(game, extra, owned)) return false;
       if (selectedLang) {
         const gameLangNames = game.languages?.map((l: any) => l.name) || [];
         if (!gameLangNames.includes(selectedLang)) return false;
@@ -296,7 +326,7 @@ export const GameCatalog: React.FC = () => {
       }
     });
     return result;
-  }, [games, searchQuery, selectedRating, selectedTags, selectedLang, sortBy, getStoreFilters, getAgeRating, getHideAdult]);
+  }, [games, searchQuery, selectedRating, selectedTags, selectedLang, sortBy, extra, owned, getStoreFilters, getAgeRating, getHideAdult]);
 
   // Игры 18+ скрыты, пока возраст не подтверждён: окно на входе в каталог закрывало
   // магазин новым посетителям и поисковикам. Подтверждение — по кнопке в плашке.
@@ -381,6 +411,10 @@ export const GameCatalog: React.FC = () => {
         selectedLang={selectedLang}
         onChangeLang={setSelectedLang}
         hideAdult={getHideAdult()}
+        extra={extra}
+        onChangeExtra={patchExtra}
+        developers={developers}
+        sourceKinds={sourceKindsAll}
       />
 
       <main ref={mainRef} className="flex-1 min-w-0 scroll-mt-6">
@@ -428,6 +462,7 @@ export const GameCatalog: React.FC = () => {
           selectedLang={selectedLang}
           onClearLang={() => setSelectedLang('')}
           onClearAll={clearFilters}
+          extraChips={extraChips(extra, patchExtra)}
           pageSize={pageSize}
           onChangePageSize={setPageSize}
           view={view}
@@ -438,7 +473,7 @@ export const GameCatalog: React.FC = () => {
           variants={gridVariants}
           initial="hidden"
           animate="visible"
-          key={`${sortBy}-${selectedRating}-${selectedTags.join(',')}-${selectedLang}-${view}-${currentPage}-${pageSize}`}
+          key={`${sortBy}-${selectedRating}-${selectedTags.join(',')}-${selectedLang}-${JSON.stringify(extra)}-${view}-${currentPage}-${pageSize}`}
           className={view === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5' : 'flex flex-col gap-4'}
         >
           {pagedGames.length > 0 ? (

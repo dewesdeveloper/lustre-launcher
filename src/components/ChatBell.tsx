@@ -84,6 +84,8 @@ export const ChatBell = () => {
               tag: `lh-req-${req.id}`,
               payload: { type: 'friends' },
               category: 'friends',
+              kind: 'friend',
+              icon: req.sender_details?.profile?.avatar_url || '',
             });
           }
         }
@@ -208,6 +210,8 @@ export const ChatBell = () => {
             silent: true,
             payload: { type: 'chat', userId: msg?.sender_id },
             category: 'messages',
+            kind: 'message',
+            icon: data.sender?.avatar_url || '',
           });
           if (shown) playNotifSound();
         }
@@ -226,6 +230,8 @@ export const ChatBell = () => {
           silent: true,
           payload: { type: 'group', groupId: data.group_id },
           category: 'groups',
+          kind: 'group',
+          icon: data.sender?.avatar_url || '',
         });
         if (shown) playNotifSound();
       } else if (data.type === 'chat.read') {

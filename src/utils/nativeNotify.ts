@@ -1,7 +1,7 @@
 // Нативные уведомления Windows (как в Steam): в Electron вызываем
 // IPC → electron.Notification → системный тост поверх окна.
 // В обычном вебе — фолбэк на HTML5 Notification.
-import { shouldNotify, type NotifyCategory } from './notifyPrefs';
+import { getNotifyPrefs, shouldNotify, type NotifyCategory } from './notifyPrefs';
 
 export interface NativeNotifyOptions {
   title: string;
@@ -13,6 +13,9 @@ export interface NativeNotifyOptions {
   payload?: unknown;
   /** Категория для настроек «Уведомлений»; без неё (проверка) показывается всегда */
   category?: NotifyCategory;
+  /** Значок во всплывашке Lustre: что за событие и аватар (ссылка) */
+  kind?: 'notify' | 'message' | 'group' | 'friend' | 'game' | 'call';
+  icon?: string;
 }
 
 export function nativeNotify(opts: NativeNotifyOptions): boolean {
@@ -26,6 +29,9 @@ export function nativeNotify(opts: NativeNotifyOptions): boolean {
         tag: opts.tag,
         silent: !!opts.silent,
         payload: opts.payload ?? null,
+        kind: opts.kind,
+        icon: opts.icon || '',
+        style: getNotifyPrefs().style,
       });
       return true;
     }

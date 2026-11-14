@@ -1847,14 +1847,20 @@ ipcMain.handle('install-game', async (e, gameId, opts) => {
   }
 })
 
-// Нативные уведомления Windows (системные тосты, как в Steam).
-// Клик по тосту — фокус главного окна + событие в рендерер (navigate и т.п.)
+// Уведомления лаунчера. По умолчанию — свои всплывашки в правом нижнем углу экрана (как в Steam);
+// в настройках можно вернуть системные уведомления Windows.
+// Клик по уведомлению — фокус главного окна + событие в рендерер (navigate и т.п.)
+const TOAST_KINDS = new Set(['notify', 'message', 'group', 'friend', 'game', 'call'])
 ipcMain.handle('notify-show', (e, opts) => {
   try {
     const title = String(opts?.title || 'Lustre').slice(0, 120)
     const body = String(opts?.body || '').slice(0, 500)
+    const kind = TOAST_KINDS.has(opts?.kind) ? opts.kind : 'notify'
+    const avatar = typeof opts?.icon === 'string' && /^(https?:|data:image\/)/i.test(opts.icon) ? opts.icon.slice(0, 2048) : ''
+    const toast = { kind, title, body, icon: avatar, payload: opts?.payload ?? null }
+    if (opts?.style !== 'windows') return showLauncherToast(toast)
     // Во время игры — уведомление в оверлее (системные тосты Windows глушит в полноэкранных играх)
-    if (showGameToast({ kind: 'notify', title, body })) return true
+    if (showGameToast(toast)) return true
     if (!Notification.isSupported()) return false
     let icon
     try {
@@ -2640,7 +2646,8 @@ function ensureToastWindow() {
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false },
   })
   overlayToastWindow.setAlwaysOnTop(true, 'screen-saver')
-  overlayToastWindow.setIgnoreMouseEvents(true)
+  // клики проходят насквозь; forward — чтобы окно видело наведение на карточку (тогда ловим клики)
+  overlayToastWindow.setIgnoreMouseEvents(true, { forward: true })
   loadOverlayRoute(overlayToastWindow, '/overlay-toasts')
   overlayToastWindow.webContents.on('did-finish-load', sendOverlayState)
   overlayToastWindow.on('closed', () => { overlayToastWindow = null })
@@ -2650,9 +2657,23 @@ function ensureToastWindow() {
 /** Игровое уведомление. false — игра не запущена или уведомления в игре выключены. */
 function showGameToast(toast) {
   if (!currentGame || !loadOverlayPrefs().notifications) return false
-  const w = ensureToastWindow()
   const { bounds } = gameDisplay()
-  w.setBounds({ x: bounds.x + bounds.width - TOAST_W - 24, y: bounds.y + bounds.height - TOAST_H - 24, width: TOAST_W, height: TOAST_H })
+  deliverToast({ x: bounds.x + bounds.width - TOAST_W - 24, y: bounds.y + bounds.height - TOAST_H - 24 }, toast)
+  return true
+}
+
+/** Уведомление лаунчера в правом нижнем углу (над панелью задач); в игре — в игровом оверлее */
+function showLauncherToast(toast) {
+  if (currentGame) return showGameToast(toast)
+  let area
+  try { area = screen.getPrimaryDisplay().workArea } catch { return false }
+  deliverToast({ x: area.x + area.width - TOAST_W - 12, y: area.y + area.height - TOAST_H - 12 }, toast)
+  return true
+}
+
+function deliverToast(pos, toast) {
+  const w = ensureToastWindow()
+  w.setBounds({ ...pos, width: TOAST_W, height: TOAST_H })
   const deliver = () => {
     if (!overlayToastWindow || overlayToastWindow.isDestroyed()) return
     overlayToastWindow.webContents.send('overlay-toast', { id: Date.now() + Math.random(), ...toast })
@@ -2660,7 +2681,6 @@ function showGameToast(toast) {
   }
   if (w.webContents.isLoading()) w.webContents.once('did-finish-load', deliver)
   else deliver()
-  return true
 }
 
 function screenshotsRoot() { return path.join(app.getPath('pictures'), 'Lustre') }
@@ -2754,7 +2774,23 @@ ipcMain.on('overlay-open-screenshots-folder', () => {
   void shell.openPath(dir)
 })
 ipcMain.on('overlay-toasts-empty', () => {
-  if (overlayToastWindow && !overlayToastWindow.isDestroyed()) overlayToastWindow.hide()
+  if (overlayToastWindow && !overlayToastWindow.isDestroyed()) {
+    overlayToastWindow.setIgnoreMouseEvents(true, { forward: true })
+    overlayToastWindow.hide()
+  }
+})
+// Курсор над карточкой уведомления: на рабочем столе ловим клики, в игре — всегда насквозь
+ipcMain.on('overlay-toasts-hover', (_e, hover) => {
+  if (!overlayToastWindow || overlayToastWindow.isDestroyed()) return
+  overlayToastWindow.setIgnoreMouseEvents(!(hover && !currentGame), { forward: true })
+})
+// Клик по уведомлению на рабочем столе — открыть лаунчер на нужном разделе
+ipcMain.on('overlay-toast-click', (_e, payload) => {
+  if (currentGame || !mainWindow || mainWindow.isDestroyed()) return
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+  mainWindow.webContents.send('notify-click', payload ?? null)
 })
 // Открыть раздел лаунчера из оверлея (страница игры, друзья…)
 ipcMain.on('overlay-open-in-launcher', (_e, route) => {
@@ -2893,7 +2929,7 @@ function getDeviceInfo() {
   }
   const platform = `${os.type()} ${os.release()}`
   const name = os.hostname() || platform
-  return { id, name, platform }
+  return { id, name, platform, version: app.getVersion() }
 }
 
 ipcMain.handle('get-device-info', () => getDeviceInfo())

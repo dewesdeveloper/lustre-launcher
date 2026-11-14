@@ -31,6 +31,8 @@ import { applyLauncherBackground } from './components/launcherBackground';
 import { reportDownload } from './api/downloadStats';
 import { localClock } from './utils/localClock';
 import { reportScan, type ScanResult } from './api/scanReports';
+import { initRemoteInstall } from './api/remoteInstall';
+import { initFriendActivity } from './api/friendActivity';
 
 export default function MainLayout({ children }: { children?: ReactNode }) {
   const { user } = useAuth();
@@ -46,9 +48,10 @@ export default function MainLayout({ children }: { children?: ReactNode }) {
   // здесь — переход к нужному разделу
   useEffect(() => {
     const electron = (window as any).electron;
-    const off = electron?.onNotifyClick?.((payload: { type?: string; userId?: number } | null) => {
+    const off = electron?.onNotifyClick?.((payload: { type?: string; userId?: number; username?: string } | null) => {
       try { window.focus(); } catch { /* ignore */ }
       if (payload?.type === 'friends') navigate('/friends');
+      else if (payload?.type === 'profile' && payload.username) navigate(`/profile/${encodeURIComponent(payload.username)}`);
       else if (payload?.type === 'chat' && payload.userId) openChatWindow(payload.userId);
       else if (payload?.type === 'group') openChatWindow();
       // payload.type === 'call' — оверлей звонка и так открыт в фокусе
@@ -176,6 +179,15 @@ export default function MainLayout({ children }: { children?: ReactNode }) {
       applyLauncherBackground(null);
     }
   }, [launcherBg]);
+
+  // «Друг запустил игру» — всплывающее уведомление (в колокольчик не попадает)
+  useEffect(() => (user?.id ? initFriendActivity(user.id) : undefined), [user?.id]);
+
+  // Удалённая установка с телефона: команда открывает страницу игры, та запускает загрузку.
+  // Подписка раньше подключения WS — чтобы device.hello ушёл уже на первом __open.
+  useEffect(() => initRemoteInstall((cmd) => {
+    navigate(`/library/games/${cmd.game_id}`, { state: { remoteInstall: cmd } });
+  }), [navigate]);
 
   // WS-подключение из главного окна: пользователь «в сети», пока запущен лаунчер
   useEffect(() => {

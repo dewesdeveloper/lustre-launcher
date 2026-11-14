@@ -4,16 +4,18 @@ import EmptyBlock from './EmptyBlock';
 
 type ProfileGamesTabProps = {
   library: any[] | null;
+  /** владелец скрыл библиотеку — причина вместо «нет игр» */
+  hiddenReason?: string;
   onGameClick: (gameId: any) => void;
 };
 
-export default function ProfileGamesTab({ library, onGameClick }: ProfileGamesTabProps) {
+export default function ProfileGamesTab({ library, hiddenReason, onGameClick }: ProfileGamesTabProps) {
   return (
     <div>
       {library === null ? (
         <div className="flex justify-center py-16"><Loader2 className="animate-spin text-accent" size={26} /></div>
       ) : library.length === 0 ? (
-        <EmptyBlock text="В библиотеке пока нет игр" />
+        <EmptyBlock text={hiddenReason || 'В библиотеке пока нет игр'} />
       ) : (
         <>
           <SectionHeader title="Игры" count={library.length} />

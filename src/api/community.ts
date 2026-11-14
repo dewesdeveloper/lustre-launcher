@@ -33,6 +33,9 @@ export type CommunityCreator = {
 /** Игра, к которой привязано сообщество */
 export type CommunityGame = { ID: number; title: string; header_image?: string; banner_url?: string; is_adult?: boolean };
 
+/** Формат сообщества: о чём оно (игра из каталога — только у «games») */
+export type CommunityFormat = 'social' | 'games' | 'creative' | 'hobby' | 'other';
+
 export type Community = {
   ID: number;
   name: string;
@@ -40,8 +43,9 @@ export type Community = {
   cover_url: string;
   is_private: boolean;
   invite_code?: string;
-  game_id: number;
-  game: CommunityGame;
+  format?: CommunityFormat;
+  game_id: number | null;
+  game: CommunityGame | null;
   theme_id: number;
   theme: CommunityTheme;
   creator_id: number;
@@ -50,10 +54,13 @@ export type Community = {
   CreatedAt?: string;
 };
 
-export type CreateCommunityPayload = Pick<Community, 'name' | 'description' | 'cover_url' | 'game_id' | 'theme_id' | 'is_private'>;
+export type CreateCommunityPayload = Pick<Community, 'name' | 'description' | 'cover_url' | 'theme_id' | 'is_private'> & {
+  format: CommunityFormat;
+  game_id?: number;
+};
 
 /** Что видно по ссылке-приглашению до вступления */
-export type InvitePreview = { id: number; name: string; game_title: string; theme_name: string; is_private: boolean };
+export type InvitePreview = { id: number; name: string; format?: CommunityFormat; game_title: string; theme_name: string; is_private: boolean };
 
 type Authored = { ID: number; author_id: number; author?: CommunityCreator; CreatedAt?: string };
 

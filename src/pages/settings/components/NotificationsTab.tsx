@@ -12,6 +12,7 @@ const CATEGORIES: { id: NotifyCategory; label: string }[] = [
   { id: 'messages', label: 'Личные сообщения' },
   { id: 'groups', label: 'Сообщения в группах' },
   { id: 'friends', label: 'Заявки в друзья' },
+  { id: 'friendGame', label: 'Друг запустил игру' },
   { id: 'calls', label: 'Входящие звонки' },
   { id: 'missed', label: 'Пропущенные и завершённые звонки' },
 ];
@@ -34,7 +35,9 @@ export default function NotificationsTab() {
       silent: true,
     });
     playNotifSound(true);
-    setTested(shown ? null : 'Система не дала показать уведомление — проверь разрешения уведомлений Windows для Lustre.');
+    setTested(shown ? null : p.style === 'windows'
+      ? 'Система не дала показать уведомление — проверь разрешения уведомлений Windows для Lustre.'
+      : 'Не удалось показать уведомление.');
   };
 
   return (
@@ -43,9 +46,15 @@ export default function NotificationsTab() {
         <Head>ВСПЛЫВАЮЩИЕ УВЕДОМЛЕНИЯ</Head>
         <div className="space-y-4">
           <SettingsToggle
-            label="Показывать уведомления Windows"
+            label="Показывать всплывающие уведомления"
             checked={p.enabled}
             onChange={() => setNotifyPrefs({ enabled: !p.enabled })}
+          />
+          <SettingsToggle
+            label="Использовать уведомления Windows вместо уведомлений Lustre"
+            checked={p.style === 'windows'}
+            disabled={!p.enabled}
+            onChange={() => setNotifyPrefs({ style: p.style === 'windows' ? 'lustre' : 'windows' })}
           />
           <SettingsToggle
             label="Не беспокоить"
@@ -56,7 +65,9 @@ export default function NotificationsTab() {
         <p className="tl-term text-[15px] text-[var(--muted-2)] mt-3">
           {p.dnd
             ? 'Уведомления и звуки отключены. Окно входящего звонка всё равно появится, но без мелодии.'
-            : 'Уведомления приходят, когда окно лаунчера свёрнуто или не в фокусе.'}
+            : p.style === 'windows'
+              ? 'Системные уведомления Windows. Сообщения — когда окно лаунчера свёрнуто или не в фокусе.'
+              : 'Уведомления всплывают в правом нижнем углу экрана, как в Steam; клик открывает лаунчер. Сообщения — когда окно лаунчера свёрнуто или не в фокусе.'}
         </p>
         <div className="flex items-center gap-3 mt-4">
           <button className="tl-btn ghost" onClick={test}>Проверить</button>

@@ -161,6 +161,7 @@ export default function GroupCallOverlay() {
         silent: true,
         payload: { type: 'call' },
         category: 'calls',
+        kind: 'call',
       });
     }
   }, [st.status, st.caller, st.groupName]);
@@ -174,6 +175,7 @@ export default function GroupCallOverlay() {
         tag: 'lh-group-notice',
         payload: { type: 'call' },
         category: 'missed',
+        kind: 'call',
       });
     }
   }, [st.notice]);

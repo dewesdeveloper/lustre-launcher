@@ -71,6 +71,7 @@ export default function CallOverlay() {
         silent: true,
         payload: { type: 'call' },
         category: 'calls',
+        kind: 'call',
       });
     }
   }, [st.status, st.peer]);
@@ -84,6 +85,7 @@ export default function CallOverlay() {
         tag: 'lh-call-notice',
         payload: { type: 'call' },
         category: 'missed',
+        kind: 'call',
       });
     }
   }, [st.notice]);
