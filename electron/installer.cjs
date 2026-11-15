@@ -1,5 +1,5 @@
 const { app, shell } = require('electron')
-const { spawn } = require('node:child_process')
+const { spawn, execFile } = require('node:child_process')
 const fs = require('node:fs')
 const path = require('node:path')
 const os = require('node:os')
@@ -64,7 +64,9 @@ function extractorsFor(isRar) {
 const INSTALLER_NAME_RE = /^(setup|install|installer|autorun|redist)([ _\-.]?\d+)?\.(exe|msi|bat|cmd)$/i
 const EXE_EXCLUDE_RE = /unins|setup|install|redist|directx|dxsetup|dxweb|vcredist|dotnet|crash|handler|unrar|winrar|7-?zip|7za|readme|autoupdate|unity|unarc|inno/i
 const VOLUME_RE = /^(.*?)(\.part\d+\.rar|\.\d{3}|\.r\d{2})$/i
-const ARCHIVE_FILE_RE = /\.(zip|7z|rar|\d{3}|r\d{2})$/i
+// .iso — образ диска: 7-Zip распаковывает его как архив (ISO 9660 / UDF)
+const ARCHIVE_FILE_RE = /\.(zip|7z|rar|iso|\d{3}|r\d{2})$/i
+const ISO_FILE_RE = /\.iso$/i
 
 function walk(dir, depth, out, maxDepth) {
   let entries = []
@@ -103,7 +105,7 @@ function pickFirstPart(parts) {
 function archiveGroupOf(name) {
   if (!ARCHIVE_FILE_RE.test(name)) return null
   const m = name.match(VOLUME_RE)
-  if (!m) return /\.(zip|7z|rar)$/i.test(name) ? { base: name, vol: '' } : null
+  if (!m) return /\.(zip|7z|rar|iso)$/i.test(name) ? { base: name, vol: '' } : null
   const vol = m[2]
   if (/^\.part\d+\.rar$/i.test(vol) || /^\.r\d{2}$/i.test(vol)) return { base: m[1] + '.rar', vol }
   return /\.(zip|7z|rar)$/i.test(m[1]) ? { base: m[1], vol } : null
@@ -506,6 +508,49 @@ function detectInstall(contentPath) {
   } catch {
     return null
   }
+}
+
+// --- Образы дисков (.iso): подключение встроенными средствами Windows 10/11 ---
+// Обычно образ просто распаковывается 7-Zip. Подключение нужно, когда распаковать не вышло или
+// установщик требует «настоящий диск» (старые игры проверяют, что запущены с CD/DVD).
+// Прав администратора для ISO не нужно.
+
+function runPowerShell(script, timeout = 60000) {
+  return new Promise((resolve, reject) => {
+    // -EncodedCommand: путь с кириллицей, пробелами и кавычками передаётся без экранирования
+    const encoded = Buffer.from(script, 'utf16le').toString('base64')
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
+      { windowsHide: true, timeout }, (err, stdout, stderr) => {
+        if (err) reject(new Error(String(stderr || err.message).replace(/\s+/g, ' ').trim().slice(0, 300)))
+        else resolve(String(stdout).trim())
+      })
+  })
+}
+
+const psQuote = (s) => "'" + String(s).replace(/'/g, "''") + "'"
+
+/** Подключить образ; возвращает корень диска (например, E:\\) */
+async function mountIso(isoPath) {
+  const p = psQuote(path.resolve(isoPath))
+  // qBittorrent создаёт файлы «разреженными», а такой образ Windows не подключает
+  // («файл образа диска повреждён») — снимаем флаг, содержимое файла это не меняет.
+  const out = await runPowerShell([
+    "$ErrorActionPreference = 'Stop'",
+    `& fsutil sparse setflag ${p} 0 2>$null | Out-Null`,
+    `$img = Get-DiskImage -ImagePath ${p}`,
+    `if (-not $img.Attached) { Mount-DiskImage -ImagePath ${p} -StorageType ISO | Out-Null }`,
+    '$letter = $null',
+    `for ($i = 0; $i -lt 20 -and -not $letter; $i++) { $letter = (Get-DiskImage -ImagePath ${p} | Get-Volume).DriveLetter; if (-not $letter) { Start-Sleep -Milliseconds 300 } }`,
+    '$letter',
+  ].join('; '))
+  const letter = out.split(/\r?\n/).map((x) => x.trim()).filter(Boolean).pop() || ''
+  if (!/^[A-Za-z]$/.test(letter)) throw new Error('Windows не назначил образу букву диска')
+  return letter.toUpperCase() + ':\\'
+}
+
+/** Отключить образ (ошибки не важны: мог быть уже отключён вручную) */
+function dismountIso(isoPath) {
+  return runPowerShell(`Dismount-DiskImage -ImagePath ${psQuote(path.resolve(isoPath))} | Out-Null`, 30000).catch(() => {})
 }
 
 // Пароли защищённых репак-архивов (как в Hydra game-files-manager.ts)
@@ -1001,6 +1046,9 @@ module.exports = {
   getBundled7z,
   detectInstall,
   extractArchive,
+  ISO_FILE_RE,
+  mountIso,
+  dismountIso,
   hoistGameRoot,
   findInstallerIn,
   largestArchive,

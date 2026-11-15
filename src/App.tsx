@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import Home from "./pages/Home/home";
 import { StorePage } from "./pages/market/StorePage";
 import { RecommendationsPage } from "./pages/market/RecommendationsPage";
+import { TrendsPage } from "./pages/market/TrendsPage";
 import Login from './pages/authorization/Login';
 import Register from './pages/authorization/Register';
 import ResetPassword from './pages/authorization/ResetPassword';
@@ -144,6 +145,7 @@ export default function App() {
           {isWeb && <Route path="/about" element={<AboutPage />} />}
           <Route path="/store" element={<OfflineGate><StorePage /></OfflineGate>} />
           <Route path="/store/recommendations" element={<OfflineGate><RecommendationsPage /></OfflineGate>} />
+          <Route path="/store/trends" element={<OfflineGate><TrendsPage /></OfflineGate>} />
           <Route path="/games/:id" element={<OfflineGate><GameDetailsPage /></OfflineGate>} />
           <Route path="/community" element={<OfflineGate><CommunityPage /></OfflineGate>} />
           <Route path="/community/discussions" element={<OfflineGate><DiscussionsPage /></OfflineGate>} />

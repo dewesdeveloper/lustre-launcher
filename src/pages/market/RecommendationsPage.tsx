@@ -1,110 +1,170 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  IconChevronRight, IconDeviceGamepad2, IconHeart, IconLoader2, IconShoppingBag,
+  IconArrowRight, IconChevronRight, IconDeviceGamepad2, IconHeart, IconLoader2, IconRefresh, IconShoppingBag,
   IconSparkles, IconStar, IconTag, IconUsersGroup,
 } from '@tabler/icons-react';
+import { ImageOff } from 'lucide-react';
 import { StoreSubNav } from './StoreSubNav';
+import { markLeavingToGame, stripHtml } from './constants';
 import {
   getRecommendations,
-  type RecGame, type RecItem, type RecSource, type RecommendationSignals, type Recommendations,
+  type RecGame, type RecItem, type RecSource, type RecTag, type RecommendationSignals, type Recommendations,
 } from '../../api/recommendations';
 import { themeSwatch } from '../../components/profileThemes';
 
-/** Источники подборки: кнопка-фильтр и заголовок страницы для каждого */
-const SOURCES: { id: RecSource; chip: string; heading: [string, string]; hint: string }[] = [
-  { id: 'all', chip: 'Всё', heading: ['Рекомендовано', 'Lustre'], hint: 'Подборка по всем вашим интересам: отзывы, избранное, сообщества и покупки.' },
-  { id: 'reviews', chip: 'Отзывы', heading: ['По вашим', 'отзывам'], hint: 'Основано на играх, которые вы положительно оценили.' },
-  { id: 'favorites', chip: 'Избранное', heading: ['На основе', 'избранного'], hint: 'Основано на играх, добавленных вами в избранное.' },
-  { id: 'library', chip: 'Библиотека', heading: ['Из вашей', 'библиотеки'], hint: 'Основано на играх, которые вы добавили в библиотеку.' },
-  { id: 'communities', chip: 'Сообщества', heading: ['Из ваших', 'сообществ'], hint: 'Основано на играх сообществ, в которых вы состоите.' },
-  { id: 'customization', chip: 'Кастомизация', heading: ['По вашей', 'кастомизации'], hint: 'Основано на тегах приобретённых товаров и стиля профиля.' },
+/** Источники подборки: вкладка и подзаголовок для каждого */
+const SOURCES: { id: RecSource; label: string; icon: ReactNode; hint: string }[] = [
+  { id: 'all', label: 'Всё', icon: <IconSparkles size={13} />, hint: 'по всем вашим интересам: отзывы, избранное, библиотека, сообщества и покупки' },
+  { id: 'reviews', label: 'Отзывы', icon: <IconStar size={13} />, hint: 'по играм, которые вы положительно оценили' },
+  { id: 'favorites', label: 'Избранное', icon: <IconHeart size={13} />, hint: 'по играм из вашего избранного' },
+  { id: 'library', label: 'Библиотека', icon: <IconDeviceGamepad2 size={13} />, hint: 'по играм из вашей библиотеки' },
+  { id: 'communities', label: 'Сообщества', icon: <IconUsersGroup size={13} />, hint: 'по играм сообществ, в которых вы состоите' },
+  { id: 'customization', label: 'Кастомизация', icon: <IconShoppingBag size={13} />, hint: 'по тегам купленных предметов и стилю профиля' },
 ];
 
 /** Счётчики «на чём основана подборка» */
-const SIGNALS: { key: keyof RecommendationSignals; label: string; tone: string; icon: ReactNode }[] = [
-  { key: 'reviews', label: 'отзывов', tone: 'text-accent', icon: <IconStar size={13} /> },
-  { key: 'favorites', label: 'в избранном', tone: 'text-rose-400', icon: <IconHeart size={13} /> },
-  { key: 'library', label: 'в библиотеке', tone: 'text-emerald-400', icon: <IconDeviceGamepad2 size={13} /> },
-  { key: 'communities', label: 'сообществ', tone: 'text-cyan', icon: <IconUsersGroup size={13} /> },
-  { key: 'purchases', label: 'покупок', tone: 'text-violet', icon: <IconShoppingBag size={13} /> },
+const SIGNALS: { key: keyof RecommendationSignals; label: string; icon: ReactNode }[] = [
+  { key: 'reviews', label: 'отзывов', icon: <IconStar size={14} /> },
+  { key: 'favorites', label: 'в избранном', icon: <IconHeart size={14} /> },
+  { key: 'library', label: 'в библиотеке', icon: <IconDeviceGamepad2 size={14} /> },
+  { key: 'communities', label: 'сообществ', icon: <IconUsersGroup size={14} /> },
+  { key: 'purchases', label: 'покупок', icon: <IconShoppingBag size={14} /> },
 ];
 
-const RARITY: Record<string, string> = { common: 'Обычный', rare: 'Редкий', epic: 'Эпический', legendary: 'Легендарный' };
+const RARITY: Record<string, { label: string; chip: string }> = {
+  common: { label: 'Обычный', chip: 'common' },
+  rare: { label: 'Редкий', chip: 'rare' },
+  epic: { label: 'Эпический', chip: 'epic' },
+  legendary: { label: 'Легендарный', chip: 'legendary' },
+};
 
 const money = new Intl.NumberFormat('ru-RU');
 
-const PLACEHOLDER = <div className="w-full h-full bg-gradient-to-br from-violet/30 via-[#121017] to-accent/20" />;
+function Cover({ src, className }: { src?: string; className: string }) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) {
+    return <div className={`${className} flex items-center justify-center bg-[rgb(var(--accent-rgb)/.08)] text-[var(--muted-2)]`}><ImageOff size={22} /></div>;
+  }
+  return <img src={src} alt="" loading="lazy" decoding="async" onError={() => setFailed(true)} className={className} />;
+}
 
 function ItemCover({ item }: { item: RecItem }) {
-  if (item.type !== 'theme') return item.image_url ? <img src={item.image_url} alt="" className="w-full h-full object-cover" /> : PLACEHOLDER;
+  if (item.type !== 'theme') return <Cover src={item.image_url} className="h-full w-full object-cover" />;
   const [accent, violet] = themeSwatch(item.payload, item.scope);
   return (
     <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${accent}40, #0d0b13 55%, ${violet}55)` }}>
-      <div className="absolute -top-6 -right-6 w-24 h-24 rounded-full blur-2xl opacity-50" style={{ background: accent }} />
-      <span className="absolute bottom-3 left-3 text-[10px] font-black uppercase tracking-[0.25em] text-white/70">
-        {item.scope === 'launcher' ? 'Лаунчер' : 'Профиль'}
+      <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full opacity-50 blur-2xl" style={{ background: accent }} />
+      <span className="tl-head absolute bottom-3 left-3 text-[9px] font-bold uppercase tracking-[.25em] text-white/70">
+        {item.scope === 'launcher' ? 'Тема лаунчера' : 'Тема профиля'}
       </span>
     </div>
   );
 }
 
-function GameTile({ game, onOpen }: { game: RecGame; onOpen: () => void }) {
-  const cover = game.header_image || game.banner_url;
+/** Теги игры, совпавшие с интересами пользователя — «почему это в подборке» */
+function matchedTags(game: RecGame, liked: Set<number>) {
+  return (game.tags ?? []).filter((t) => liked.has(t.id));
+}
+
+function WhyLine({ tags }: { tags: { id: number; name: string }[] }) {
+  if (!tags.length) return <span className="tl-term text-[14px] text-[var(--muted-2)]">Похожа на ваши игры</span>;
   return (
-    <button type="button" onClick={onOpen} className="group text-left rounded-3xl overflow-hidden border border-white/5 bg-[#09070c] hover:border-accent/30 hover:-translate-y-0.5 transition-all duration-500">
-      <div className="relative aspect-video bg-[#121017] overflow-hidden">
-        {cover ? <img src={cover} alt="" className="w-full h-full object-cover" /> : PLACEHOLDER}
-        {game.age_rating && (
-          <span className="absolute top-3 left-3 px-2 py-0.5 rounded-md bg-black/60 backdrop-blur text-[10px] font-black uppercase tracking-widest text-white/80 border border-white/10">{game.age_rating}</span>
-        )}
+    <span className="tl-term truncate text-[14px] text-[var(--muted)]">
+      Вам нравится: <span className="text-accent">{tags.slice(0, 3).map((t) => t.name).join(', ')}</span>
+    </span>
+  );
+}
+
+/** Главная рекомендация — крупно, с описанием */
+function Spotlight({ game, liked, onOpen }: { game: RecGame; liked: Set<number>; onOpen: () => void }) {
+  const why = matchedTags(game, liked);
+  const text = game.description ? stripHtml(game.description) : '';
+  return (
+    <button type="button" onClick={onOpen} className="tl-panel tl-gcard group grid w-full grid-cols-1 overflow-hidden text-left lg:grid-cols-[1.5fr_1fr]">
+      <div className="relative aspect-video overflow-hidden bg-[#121017] lg:aspect-auto lg:min-h-[300px]">
+        <Cover src={game.banner_url || game.header_image} className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.03]" />
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent to-[#07040c]/70" />
+        <span className="tl-chip rare absolute left-4 top-4"><IconSparkles size={10} className="mr-1 inline align-[-1px]" />Лучшее совпадение</span>
       </div>
-      <div className="p-4">
-        <h3 className="text-sm font-black text-white uppercase tracking-tight line-clamp-1 group-hover:text-accent transition-colors">{game.title}</h3>
-        <div className="flex flex-wrap gap-1.5 mt-3">
-          {game.tags?.slice(0, 3).map((t) => (
-            <span key={t.id} className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest bg-violet/10 border border-violet/20 text-violet/80">{t.name}</span>
-          ))}
+      <div className="flex flex-col justify-between gap-5 p-7">
+        <div>
+          <h2 className="tl-pixel text-[22px] leading-tight text-white transition-colors group-hover:text-accent">{game.title}</h2>
+          <div className="mt-3"><WhyLine tags={why} /></div>
+          {text && <p className="tl-term mt-4 line-clamp-5 text-[16px] leading-relaxed text-pearl/75">{text}</p>}
         </div>
+        <div>
+          <div className="mb-4 flex flex-wrap gap-1.5">
+            {game.age_rating && <span className="tl-chip age">{game.age_rating}</span>}
+            {(game.tags ?? []).slice(0, 5).map((t) => <span key={t.id} className={`tl-chip ${liked.has(t.id) ? 'rare' : 'age'}`}>{t.name}</span>)}
+          </div>
+          <span className="tl-btn solid w-fit">Открыть игру <IconArrowRight size={14} /></span>
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function GameTile({ game, liked, onOpen }: { game: RecGame; liked: Set<number>; onOpen: () => void }) {
+  return (
+    <button type="button" onClick={onOpen} className="tl-panel tl-gcard group overflow-hidden text-left">
+      <div className="relative aspect-video overflow-hidden bg-[#121017]">
+        <Cover src={game.header_image || game.banner_url} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" />
+        {game.age_rating && <span className="tl-chip age absolute left-2 top-2 bg-black/60">{game.age_rating}</span>}
+      </div>
+      <div className="px-4 py-3">
+        <h3 className="truncate text-[11px] transition-colors group-hover:text-accent">{game.title}</h3>
+        <div className="mt-1.5 truncate"><WhyLine tags={matchedTags(game, liked)} /></div>
       </div>
     </button>
   );
 }
 
 function ItemTile({ item, onOpen }: { item: RecItem; onOpen: () => void }) {
+  const r = RARITY[item.rarity] ?? { label: item.rarity, chip: 'age' };
   return (
-    <button type="button" onClick={onOpen} className="group text-left rounded-3xl overflow-hidden border border-white/5 bg-[#09070c] hover:border-violet/30 hover:-translate-y-0.5 transition-all duration-500">
-      <div className="relative aspect-video bg-[#121017] overflow-hidden"><ItemCover item={item} /></div>
-      <div className="p-4">
-        <h3 className="text-xs font-black text-white uppercase tracking-tight line-clamp-1 mb-2">{item.name}</h3>
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[10px] font-black uppercase tracking-widest text-pearl/60">{RARITY[item.rarity] ?? item.rarity}</span>
-          <span className="text-[10px] font-black italic tracking-tighter text-amber-400">{money.format(item.price)} ₸</span>
-        </div>
-        <div className="flex flex-wrap gap-1.5 mt-2.5">
-          {item.tags?.slice(0, 2).map((t) => (
-            <span key={t.id} className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest bg-white/5 border border-white/10 text-pearl/70">{t.name}</span>
-          ))}
+    <button type="button" onClick={onOpen} className="tl-panel tl-gcard group overflow-hidden text-left">
+      <div className="relative aspect-video overflow-hidden bg-[#121017]"><ItemCover item={item} /></div>
+      <div className="px-4 py-3">
+        <h3 className="truncate text-[11px] transition-colors group-hover:text-accent">{item.name}</h3>
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <span className={`tl-chip ${r.chip}`}>{r.label}</span>
+          <span className="tl-num text-[13px] text-amber-400">{money.format(item.price)} ₸</span>
         </div>
       </div>
     </button>
   );
 }
 
-/** Блок подборки: заголовок с иконкой, ссылка «ещё» и сетка карточек */
-function Shelf({ icon, title, more, moreHover, onMore, children }: {
-  icon: ReactNode; title: string; more: string; moreHover: string; onMore: () => void; children: ReactNode;
-}) {
+function SectionHead({ icon, title, action }: { icon: ReactNode; title: ReactNode; action?: { label: string; onClick: () => void } }) {
   return (
-    <section className="mb-10 last:mb-0">
-      <div className="flex items-center justify-between gap-4 mb-5">
-        <h3 className="text-lg font-black italic uppercase tracking-tighter text-white flex items-center gap-2.5">{icon} {title}</h3>
-        <button type="button" onClick={onMore} className={`flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.2em] text-pearl/60 transition-all ${moreHover}`}>
-          {more} <IconChevronRight size={14} />
+    <div className="tl-sec-head">
+      <span className="bar" />
+      <h2 className="flex items-center gap-2">{icon} {title}</h2>
+      <span className="line" />
+      {action && (
+        <button type="button" onClick={action.onClick} className="tl-btn ghost">
+          {action.label} <IconChevronRight size={13} />
         </button>
-      </div>
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">{children}</div>
-    </section>
+      )}
+    </div>
+  );
+}
+
+function TagCloud({ tags, onTag }: { tags: RecTag[]; onTag: (name: string) => void }) {
+  const max = Math.max(...tags.map((t) => t.score), 1);
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {tags.map((t) => {
+        const strong = t.score / max > 0.6;
+        return (
+          <button key={t.id} type="button" onClick={() => onTag(t.name)} title={`Вес интереса: ${t.score}`}
+            className={`tl-chip cursor-pointer hover:text-white ${strong ? 'rare' : 'age'}`}>
+            {t.name}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -116,6 +176,7 @@ export const RecommendationsPage = () => {
 
   const [data, setData] = useState<Recommendations | null>(null);
   const [loading, setLoading] = useState(true);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -124,90 +185,106 @@ export const RecommendationsPage = () => {
       .then((r) => alive && setData(r), () => alive && setData(null))
       .finally(() => alive && setLoading(false));
     return () => { alive = false; };
-  }, [current.id]);
+  }, [current.id, reload]);
 
+  const liked = useMemo(() => new Set((data?.tags ?? []).map((t) => t.id)), [data]);
   const signals = data?.signals;
-  const anySignal = !!signals && SIGNALS.some((s) => signals[s.key] > 0);
   const empty = !data || (data.games.length === 0 && data.items.length === 0);
+  const [first, ...restGames] = data?.games ?? [];
+
+  const openGame = (id: number) => { markLeavingToGame(); navigate(`/games/${id}`); };
+  const byTag = (name: string) => navigate(`/store?tag=${encodeURIComponent(name)}`);
+  const pick = (id: RecSource) => navigate(id === 'all' ? '/store/recommendations' : `/store/recommendations?source=${id}`);
 
   return (
-    <div className="animate-in fade-in duration-500 pt-20 text-left">
+    <div className="animate-in fade-in pb-12 duration-500 text-left">
       <StoreSubNav />
 
-      <div className="p-8 max-w-[1500px] mx-auto">
-        <header className="relative overflow-hidden rounded-[2.5rem] border border-white/5 bg-[#09070c] p-8 mb-8">
-          <div className="absolute -top-24 -right-20 w-72 h-72 rounded-full bg-violet/20 blur-[130px] pointer-events-none" />
-          <div className="absolute -bottom-24 -left-20 w-72 h-72 rounded-full bg-accent/15 blur-[130px] pointer-events-none" />
-          <div className="relative">
-            <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-white/10 bg-white/[0.03] text-[10px] font-black uppercase tracking-[0.3em] text-pearl/72">
-              <IconSparkles size={12} className="text-violet" /> Персонально для вас
-            </span>
-            <h2 className="mt-4 text-3xl font-black italic uppercase tracking-tighter text-white">
-              {current.heading[0]} <span className="text-violet">{current.heading[1]}</span>
-            </h2>
-            <p className="text-pearl/70 text-xs font-medium mt-2 max-w-2xl">{current.hint}</p>
+      <div className="mx-auto max-w-[1240px] px-6 pt-8">
+        <header className="tl-panel relative mb-6 overflow-hidden p-8">
+          <div aria-hidden className="pointer-events-none absolute inset-0 opacity-70" style={{
+            backgroundImage: 'radial-gradient(560px 240px at 90% 0%, rgba(131,56,236,.24), transparent 70%), radial-gradient(520px 220px at 0% 100%, rgb(var(--accent-rgb)/.18), transparent 70%), linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px)',
+            backgroundSize: 'auto, auto, 28px 28px, 28px 28px',
+          }} />
+          <div className="relative flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+            <div className="max-w-2xl">
+              <p className="tl-head mb-3 text-[10px] font-bold uppercase tracking-[.3em] text-accent">// For you</p>
+              <h1 className="tl-pixel text-[30px] leading-tight text-white" style={{ textShadow: 'var(--glow)' }}>
+                Рекомендовано <span className="text-violet">вам</span>
+              </h1>
+              <p className="tl-term mt-2 text-[16px] text-[var(--muted)]">Подборка {current.hint}.</p>
+            </div>
+            <button type="button" onClick={() => setReload((n) => n + 1)} className="tl-btn ghost shrink-0" title="Обновить подборку">
+              <IconRefresh size={14} /> Обновить
+            </button>
+          </div>
 
-            {anySignal && (
-              <div className="flex flex-wrap gap-2.5 mt-5">
-                {SIGNALS.map((s) => (
-                  <span key={s.key} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/[0.03] border border-white/10">
-                    <span className={s.tone}>{s.icon}</span>
-                    <span className="text-[11px] font-black text-white">{signals[s.key]}</span>
-                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-pearl/60">{s.label}</span>
-                  </span>
-                ))}
-              </div>
-            )}
-
-            <div className="flex flex-wrap gap-2 mt-5">
-              {SOURCES.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => navigate(s.id === 'all' ? '/store/recommendations' : `/store/recommendations?source=${s.id}`)}
-                  className={`px-3.5 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${current.id === s.id
-                    ? 'bg-violet/15 border-violet/40 text-violet'
-                    : 'bg-white/[0.02] border-white/5 text-pearl/60 hover:border-white/15'}`}
-                >
-                  {s.chip}
-                </button>
+          {signals && (
+            <div className="relative mt-7 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+              {SIGNALS.map((s) => (
+                <div key={s.key} className="tl-stat">
+                  <div className="n">{signals[s.key]}</div>
+                  <div className="l flex items-center justify-center gap-1.5">{s.icon} {s.label}</div>
+                </div>
               ))}
             </div>
+          )}
 
-            {!!data?.tags.length && (
-              <div className="flex flex-wrap items-center gap-2 mt-5">
-                <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.25em] text-pearl/60"><IconTag size={12} /> Вам нравится</span>
-                {data.tags.slice(0, 10).map((t) => (
-                  <span key={t.id} title={`Вес интереса: ${t.score}`} className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest bg-violet/10 border border-violet/20 text-violet/80">{t.name}</span>
-                ))}
-              </div>
-            )}
-          </div>
+          {!!data?.tags.length && (
+            <div className="relative mt-6">
+              <p className="tl-head mb-3 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[.22em] text-[var(--muted)]"><IconTag size={12} /> Ваши интересы — нажмите, чтобы открыть каталог</p>
+              <TagCloud tags={data.tags.slice(0, 14)} onTag={byTag} />
+            </div>
+          )}
         </header>
+
+        <div className="tl-tabs mb-8">
+          {SOURCES.map((s) => (
+            <button key={s.id} type="button" onClick={() => pick(s.id)} className={`tl-tab ${current.id === s.id ? 'active' : ''}`}>
+              {s.icon} {s.label}
+            </button>
+          ))}
+        </div>
 
         {loading ? (
           <div className="flex justify-center py-24"><IconLoader2 className="animate-spin text-accent" size={30} /></div>
         ) : empty ? (
-          <div className="rounded-[2rem] bg-white/[0.02] border border-white/5 p-16 text-center">
-            <div className="w-16 h-16 rounded-3xl bg-white/[0.03] border border-white/5 flex items-center justify-center mx-auto mb-5">
-              <IconSparkles className="text-pearl/60" size={28} />
+          <div className="tl-panel p-14 text-center">
+            <IconSparkles className="mx-auto mb-4 text-[var(--muted-2)]" size={32} />
+            <p className="tl-head text-[11px] font-bold uppercase tracking-[.2em] text-white">Пока нечего рекомендовать</p>
+            <p className="tl-term mx-auto mt-2 max-w-lg text-[16px] text-[var(--muted)]">
+              Оцените игры, добавьте их в избранное или библиотеку, вступите в сообщества — и подборка появится.
+            </p>
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <button type="button" onClick={() => navigate('/store')} className="tl-btn solid">В каталог</button>
+              <button type="button" onClick={() => navigate('/store/trends')} className="tl-btn ghost">Тренды</button>
+              <button type="button" onClick={() => navigate('/community')} className="tl-btn ghost">Сообщества</button>
             </div>
-            <p className="text-sm font-black uppercase tracking-widest text-pearl/60">Пока нечего рекомендовать</p>
-            <p className="text-xs text-pearl/55 mt-2">Оцените игры, добавьте их в избранное, вступите в сообщества — и подборка появится.</p>
           </div>
         ) : (
-          <>
-            {data.games.length > 0 && (
-              <Shelf icon={<IconDeviceGamepad2 size={20} className="text-accent" />} title="Игры для вас" more="В каталог" moreHover="hover:text-accent" onMore={() => navigate('/store')}>
-                {data.games.map((g) => <GameTile key={g.ID} game={g} onOpen={() => navigate(`/games/${g.ID}`)} />)}
-              </Shelf>
+          <div className="space-y-10">
+            {first && (
+              <section>
+                <Spotlight game={first} liked={liked} onOpen={() => openGame(first.ID)} />
+              </section>
+            )}
+            {restGames.length > 0 && (
+              <section>
+                <SectionHead icon={<IconDeviceGamepad2 size={16} className="text-accent" />} title={<>Игры <span className="text-accent">для вас</span></>} action={{ label: 'В каталог', onClick: () => navigate('/store') }} />
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+                  {restGames.map((g) => <GameTile key={g.ID} game={g} liked={liked} onOpen={() => openGame(g.ID)} />)}
+                </div>
+              </section>
             )}
             {data.items.length > 0 && (
-              <Shelf icon={<IconShoppingBag size={20} className="text-violet" />} title="Кастомизация для вас" more="В магазин" moreHover="hover:text-violet" onMore={() => navigate('/cosmetics')}>
-                {data.items.map((it) => <ItemTile key={it.id} item={it} onOpen={() => navigate('/cosmetics')} />)}
-              </Shelf>
+              <section>
+                <SectionHead icon={<IconShoppingBag size={16} className="text-violet" />} title={<>Кастомизация <span className="text-violet">для вас</span></>} action={{ label: 'В магазин', onClick: () => navigate('/cosmetics') }} />
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+                  {data.items.map((it) => <ItemTile key={it.id} item={it} onOpen={() => navigate('/cosmetics')} />)}
+                </div>
+              </section>
             )}
-          </>
+          </div>
         )}
       </div>
     </div>

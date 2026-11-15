@@ -157,3 +157,62 @@ export const getCommunityPost = (postId: number) => read<{ post: CommunityPost; 
 export const getPostComments = (postId: number) => read<CommunityPostComment[]>(`/community-posts/${postId}/comments`);
 export const addPostComment = (postId: number, content: string) => send<CommunityPostComment>(`/community-posts/${postId}/comments`, { content });
 export const deletePostComment = (commentId: number) => drop(`/community-post-comments/${commentId}`);
+
+// ---- Страница «Обсуждения»: постраничная лента и форумы игр ----
+
+/** Сообщество, в котором идёт обсуждение (короткая подпись) */
+export type DiscussionCommunity = {
+  id: number;
+  name: string;
+  cover_url: string;
+  format: string;
+  is_private: boolean;
+  is_adult: boolean;
+  game_id: number | null;
+  game_title: string;
+  theme_name: string;
+};
+
+export type DiscussionItem = {
+  post: CommunityPost;
+  community: DiscussionCommunity;
+  comments_count: number;
+  last_comment_at: string | null;
+};
+
+export type DiscussionSort = 'active' | 'new' | 'old' | 'comments';
+export type DiscussionPeriod = 'all' | 'day' | 'week' | 'month';
+export type GameKind = '' | 'regular' | 'nsfw';
+
+export type DiscussionQuery = {
+  q?: string;
+  sort?: DiscussionSort;
+  kind?: GameKind;
+  format?: string;
+  period?: DiscussionPeriod;
+  game_id?: number;
+  community_id?: number;
+  mine?: boolean;
+  limit: number;
+  offset: number;
+};
+
+/** Пустые фильтры в запрос не попадают */
+const compact = (o: Record<string, unknown>) =>
+  Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== '' && v !== false && v !== 'all' && v !== 0));
+
+export const getDiscussions = ({ mine, ...rest }: DiscussionQuery) =>
+  read<{ items: DiscussionItem[]; total: number }>('/communities/discussions', compact({ ...rest, mine: mine ? 1 : undefined }));
+
+export type ForumCommunity = { id: number; name: string; theme_name: string; members_count: number; is_private: boolean; discussions: number };
+export type ForumItem = {
+  game: { ID: number; title: string; header_image: string; banner_url: string; is_adult: boolean };
+  communities: ForumCommunity[];
+  community_count: number;
+  discussions: number;
+  members: number;
+};
+export type ForumSort = 'popular' | 'discussions' | 'alpha';
+
+export const getForums = (p: { q?: string; sort?: ForumSort; kind?: GameKind; limit: number; offset: number }) =>
+  read<{ items: ForumItem[]; total: number }>('/communities/forums', compact(p));

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ChevronDown, Compass, Heart, LayoutGrid, Loader2, Search, ShoppingBag, Sparkles, Star, Users } from 'lucide-react';
+import { ChevronDown, Compass, Flame, Heart, LayoutGrid, Newspaper, Loader2, Search, ShoppingBag, Sparkles, Star, Users } from 'lucide-react';
 import api from '../../api';
 import { getRecommendations, type RecommendationSignals, type Recommendations } from '../../api/recommendations';
 import { useSettings } from '../../context/SettingsContext';
@@ -144,6 +144,12 @@ export const StoreSubNav = () => {
             </Link>
             {dropdown('rec', 'Рекомендации', <Sparkles size={15} />, recBtn, pathname.startsWith('/store/recommendations'))}
             {dropdown('cat', 'Категории', <LayoutGrid size={15} />, catBtn, false)}
+            <Link to="/store/trends" className={`${SEGMENT} ${pathname.startsWith('/store/trends') ? SEGMENT_ON : SEGMENT_OFF}`}>
+              <Flame size={15} /> Тренды
+            </Link>
+            <Link to="/news" className={`${SEGMENT} ${pathname.startsWith('/news') ? SEGMENT_ON : SEGMENT_OFF}`}>
+              <Newspaper size={15} /> Новости
+            </Link>
           </nav>
 
           <form role="search" onSubmit={onSearch} className="relative ml-auto hidden md:block">

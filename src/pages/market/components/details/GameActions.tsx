@@ -255,6 +255,7 @@ const GameActions: React.FC<GameActionsProps> = ({
       {hasSources && (
         <SourcePickerModal
           open={pickerOpen}
+          gameId={game.ID}
           gameTitle={game.title}
           sources={game.sources}
           onClose={() => setPickerOpen(false)}

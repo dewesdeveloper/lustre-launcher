@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, Download, Users, Loader2, HardDrive, Globe } from "lucide-react";
+import { X, Download, HardDrive, Globe, Loader2, Users, Radio } from "lucide-react";
+import MarqueeText from "../../../components/ui/MarqueeText";
+import { getTorrentHealth, type LiveHealth, type SourceHealth } from "../../../api/torrentHealth";
+
+/** Пока окно открыто, лаунчер переспрашивает трекеры не чаще — трекеры ограничивают частоту scrape */
+const LIVE_REFRESH_MS = 30_000;
 
 export interface DownloadSource {
   id?: number;
@@ -12,16 +17,10 @@ export interface DownloadSource {
   sort_order?: number;
 }
 
-interface PeerInfo {
-  seeds: number;
-  totalSeeds: number;
-  leechers: number;
-  totalLeechers: number;
-  known: boolean;
-}
-
 interface Props {
   open: boolean;
+  /** для цифр сидов и пиров с сервера */
+  gameId?: number;
   gameTitle: string;
   sources: DownloadSource[];
   onPick: (source: DownloadSource) => void;
@@ -53,39 +52,95 @@ function sourceLabel(kind: string, url?: string): string {
   return KIND_LABEL[kind] ?? kind;
 }
 
+const ago = (iso: string) => {
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (min < 1) return 'только что';
+  if (min < 60) return `${min} мин назад`;
+  const h = Math.round(min / 60);
+  return h < 48 ? `${h} ч назад` : `${Math.round(h / 24)} дн назад`;
+};
+
+/** Сиды и пиры источника: живые данные лаунчера, иначе последние с сервера, иначе «нет данных». */
+function Health({ live, server, checking }: { live?: LiveHealth; server?: SourceHealth; checking: boolean }) {
+  const fresh = live && live.trackers > 0 ? live : null;
+  const stored = !fresh && server && server.trackers > 0 ? server : null;
+  const data = fresh || stored;
+  const connected = live?.connected;
+  if (!data && !connected) {
+    return checking
+      ? <span className="tl-term text-[14px] text-[var(--muted-2)] flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> проверка</span>
+      : <span className="tl-term text-[14px] text-[var(--muted-2)]" title="Ни один трекер раздачи не ответил">нет данных</span>;
+  }
+  const alive = (data?.seeds ?? 0) > 0 || (connected?.seeds ?? 0) > 0;
+  return (
+    <span className="flex flex-col items-end gap-0.5">
+      {data && (
+        <span
+          className="tl-term text-[15px] flex items-center gap-1.5"
+          style={{ color: alive ? 'var(--green2)' : 'var(--muted-2)' }}
+          title="Сиды — раздают целиком, пиры — качают. По данным трекеров раздачи"
+        >
+          <Users size={12} /> {data.seeds} сид. · {data.peers} пир.
+        </span>
+      )}
+      {connected && (
+        <span className="tl-term text-[13px] text-accent flex items-center gap-1" title="Раздача уже качается: подключено сейчас">
+          <Radio size={11} /> подключено {connected.seeds} / {connected.peers}
+        </span>
+      )}
+      {data && (
+        <span className="tl-term text-[12px] text-[var(--muted-2)]">
+          {fresh ? (checking ? 'обновляется…' : 'сейчас') : stored?.checked_at ? ago(stored.checked_at) : ''}
+        </span>
+      )}
+    </span>
+  );
+}
+
 // Модальное окно выбора источника скачивания в стиле TL: панель с уголками,
-// пиксельный заголовок, квадратные строки. Для торрентов при открытии
-// опрашиваем qBittorrent и показываем живое число сидов/пиров.
-const SourcePickerModal = ({ open, gameTitle, sources, onPick, onClose }: Props) => {
-  const [peers, setPeers] = useState<Record<string, PeerInfo>>({});
-  const [loading, setLoading] = useState(false);
+// пиксельный заголовок, крупные квадратные строки. Длинные названия не обрезаются:
+// через секунду они начинают прокручиваться (MarqueeText).
+// Сиды и пиры: сразу — последние данные сервера (опрос трекеров раз в 30 минут), затем лаунчер
+// сам спрашивает трекеры раздачи (scrape, без скачивания) и обновляет цифры раз в 30 секунд.
+const SourcePickerModal = ({ open, gameId, gameTitle, sources, onPick, onClose }: Props) => {
+  const [server, setServer] = useState<SourceHealth[]>([]);
+  const [live, setLive] = useState<Record<string, LiveHealth>>({});
+  const [checking, setChecking] = useState(false);
+
+  const magnets = sources
+    .filter((s) => (s.kind || 'torrent') === 'torrent' && s.magnet_uri)
+    .map((s) => s.magnet_uri as string);
+  const magnetKey = magnets.join('|');
 
   useEffect(() => {
-    if (!open) return;
-    const magnets = sources
-      .filter((s) => (s.kind || 'torrent') === 'torrent' && s.magnet_uri)
-      .map((s) => s.magnet_uri as string);
-    const electron = (window as any).electron;
-    if (!electron?.torrentPeers || magnets.length === 0) return;
-
-    let cancelled = false;
-    setLoading(true);
-    setPeers({});
-    electron
-      .torrentPeers(magnets)
-      .then((res: Record<string, PeerInfo>) => {
-        if (!cancelled) setPeers(res || {});
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
+    if (!open || !gameId || !magnets.length) return;
+    let alive = true;
+    getTorrentHealth(gameId).then((list) => alive && setServer(list)).catch(() => {});
+    return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, gameId, magnetKey]);
+
+  useEffect(() => {
+    const electron = (window as any).electron;
+    if (!open || !electron?.torrentHealth || !magnets.length) return;
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      setChecking(true);
+      try {
+        const res: Record<string, LiveHealth> = await electron.torrentHealth(magnets);
+        if (alive && res) setLive(res);
+      } catch { /* остаются данные сервера */ }
+      if (!alive) return;
+      setChecking(false);
+      timer = setTimeout(poll, LIVE_REFRESH_MS);
+    };
+    void poll();
+    return () => { alive = false; clearTimeout(timer); setChecking(false); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, magnetKey]);
+
+  const serverFor = (s: DownloadSource) => server.find((h) => (s.id ? h.source_id === s.id : h.source_id === 0));
 
   if (!open) return null;
 
@@ -94,83 +149,66 @@ const SourcePickerModal = ({ open, gameTitle, sources, onPick, onClose }: Props)
   return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-6" onClick={onClose}>
       <div
-        className="tl-panel w-full max-w-lg p-6 max-h-[85vh] overflow-hidden flex flex-col animate-in fade-in duration-200"
+        className="tl-panel w-full max-w-3xl p-7 max-h-[88vh] overflow-hidden flex flex-col animate-in fade-in duration-200"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-4 mb-5">
-          <div>
-            <h3 className="tl-head text-[11px] font-bold uppercase tracking-[0.14em] text-white" style={{ textShadow: 'var(--glow-sm)' }}>
+        <div className="flex items-start justify-between gap-4 mb-6">
+          <div className="min-w-0">
+            <h3 className="tl-head text-[13px] font-bold uppercase tracking-[0.14em] text-white" style={{ textShadow: 'var(--glow-sm)' }}>
               Выбор источника
             </h3>
-            <p className="tl-term text-[14px] tl-muted mt-1.5 truncate">{gameTitle}</p>
+            <MarqueeText text={gameTitle} className="tl-term text-[17px] tl-muted mt-2" />
           </div>
-          <button onClick={onClose} className="tl-muted hover:text-white transition-colors cursor-pointer" title="Закрыть">
-            <X size={18} />
+          <button onClick={onClose} className="tl-muted hover:text-white transition-colors cursor-pointer shrink-0" title="Закрыть">
+            <X size={20} />
           </button>
         </div>
 
-        <div className="space-y-2 overflow-y-auto pr-1">
+        <div className="custom-scrollbar space-y-2.5 overflow-y-auto pr-1">
           {sources.map((s, i) => {
             const kind = s.kind || 'torrent';
             const isTorrent = kind === 'torrent';
-            const info = isTorrent && s.magnet_uri ? peers[s.magnet_uri] : undefined;
             return (
               <button
                 key={s.id ?? i}
                 onClick={() => onPick(s)}
-                className="w-full text-left p-3 border border-[var(--line)] hover:border-[var(--line-2)] hover:bg-[rgb(var(--accent-rgb)/.05)] transition-colors flex items-center justify-between gap-3 cursor-pointer"
+                className="w-full text-left px-4 py-4 border border-[var(--line)] hover:border-[var(--line-2)] hover:bg-[rgb(var(--accent-rgb)/.05)] transition-colors flex items-center justify-between gap-4 cursor-pointer"
               >
-                <span className="flex items-center gap-3 min-w-0">
-                  <span className="w-8 h-8 shrink-0 border border-[var(--line)] bg-[rgb(var(--accent-rgb)/.06)] flex items-center justify-center">
+                <span className="flex items-center gap-4 min-w-0 flex-1">
+                  <span className="w-11 h-11 shrink-0 border border-[var(--line)] bg-[rgb(var(--accent-rgb)/.06)] flex items-center justify-center">
                     {isTorrent ? (
-                      <Download size={14} className="text-accent" />
+                      <Download size={18} className="text-accent" />
                     ) : (
-                      <Globe size={14} className="text-violet" />
+                      <Globe size={18} className="text-violet" />
                     )}
                   </span>
-                  <span className="min-w-0">
-                    <span className="tl-head text-[10px] font-bold uppercase tracking-[0.12em] text-white block truncate group-hover:text-white">
-                      {s.label || `Источник ${i + 1}`}
-                    </span>
-                    <span className="tl-term text-[13px] tl-muted">{sourceLabel(kind, s.url)}</span>
+                  <span className="min-w-0 flex-1">
+                    <MarqueeText
+                      text={s.label || `Источник ${i + 1}`}
+                      className="tl-head text-[12px] font-bold uppercase tracking-[0.12em] text-white"
+                    />
+                    <MarqueeText text={sourceLabel(kind, s.url)} className="tl-term text-[15px] tl-muted mt-1" />
                   </span>
                 </span>
 
                 <span className="flex items-center gap-3 shrink-0">
                   {s.size && (
-                    <span className="tl-term text-[13px] text-[var(--muted-2)] flex items-center gap-1">
-                      <HardDrive size={11} /> {s.size}
+                    <span className="tl-term text-[15px] text-[var(--muted-2)] flex items-center gap-1.5">
+                      <HardDrive size={13} /> {s.size}
                     </span>
                   )}
-                  {!isTorrent ? (
-                    <span className="tl-head text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--muted-2)] border border-[var(--line)] px-1.5 py-1">
+                  {isTorrent ? (
+                    <Health live={s.magnet_uri ? live[s.magnet_uri] : undefined} server={serverFor(s)} checking={checking} />
+                  ) : (
+                    <span className="tl-head text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--muted-2)] border border-[var(--line)] px-2 py-1">
                       сервис
                     </span>
-                  ) : loading && !info ? (
-                    <span className="tl-term text-[13px] text-[var(--muted-2)] flex items-center gap-1">
-                      <Loader2 size={11} className="animate-spin" /> проверка
-                    </span>
-                  ) : info && (info.totalSeeds > 0 || info.totalLeechers > 0) ? (
-                    <span className="tl-term text-[13px] flex items-center gap-1" style={{ color: 'var(--green2)' }}>
-                      <Users size={11} />
-                      {info.seeds} сид. · {info.leechers} пир.
-                    </span>
-                  ) : info ? (
-                    <span className="tl-term text-[13px] text-[var(--muted-2)]">нет данных</span>
-                  ) : (
-                    <span className="tl-term text-[13px] text-[var(--muted-2)]">—</span>
                   )}
                 </span>
               </button>
             );
           })}
         </div>
-
-        {loading && (
-          <p className="tl-term text-[13px] text-[var(--muted-2)] mt-4 text-center">
-            Определяем количество сидов и пиров через трекеры…
-          </p>
-        )}
       </div>
     </div>,
     document.body

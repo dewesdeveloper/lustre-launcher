@@ -13,6 +13,7 @@ import qbManaged from './qbManaged.cjs'
 import selfUpdate from './selfUpdate.cjs'
 import hosts from './hosts.cjs'
 import defender from './defender.cjs'
+import torrentScrape from './torrentScrape.cjs'
 import { File as MegaFile } from 'megajs'
 
 const { autoUpdater } = electronUpdater
@@ -574,7 +575,6 @@ function magnetHash(magnet) {
   return h.toLowerCase()
 }
 
-function delay(ms) { return new Promise(r => setTimeout(r, ms)) }
 
 // qbTorrentsByMagnet — сопоставляет торренты qBittorrent с magnet-ссылками.
 // Матчим по btih-хэшу (надёжнее, чем по полю magnet_uri, которое qB часто не хранит).
@@ -589,77 +589,25 @@ function qbTorrentsByMagnet(torrents, magnets) {
   return map
 }
 
-// qbPeersForMagnets — для каждого magnet возвращает число сидов и пиров.
-// Уже добавленные торренты читаем как есть; новые добавляем временно (тег
-// lustre-probe), несколько раз анонсируем трекеры и ждём появления пиров.
-async function qbPeersForMagnets(magnets) {
-  const result = {}
-  const unique = [...new Set((magnets || []).filter(Boolean))]
-  if (unique.length === 0) return result
-
-  if (!(await ensureQb())) return result
-
-  let existing = []
-  try { existing = await qbRequest('/api/v2/torrents/info') } catch { existing = [] }
-  if (!Array.isArray(existing)) existing = []
-
-  const known = qbTorrentsByMagnet(existing, unique)
-
-  // Какие magnet ещё не добавлены — их нужно временно добавить для анонса
-  const toProbe = unique.filter(m => !known[m])
-  const addedHashes = []
-  for (const magnet of toProbe) {
-    const res = await qbAddTorrent(magnet, QB_SAVE_PATH, { tags: 'lustre-probe', paused: false })
-    if (!res.error && !res.existing) { // свой существующий торрент удалять после проверки нельзя
-      const h = magnetHash(magnet)
-      if (h) addedHashes.push(h)
-    }
+// torrentHealthForMagnets — сиды и пиры для окна выбора источника.
+// Цифры раздачи — прямым запросом scrape к трекерам (torrentScrape.cjs): в qBittorrent
+// ничего не добавляется. Раньше раздача временно добавлялась в qB, и за ~9 секунд трекеры
+// часто не успевали ответить — показывался «0», хотя раздача живая.
+// Если раздача уже качается в qB, добавляем живые цифры подключённых сидов и пиров.
+async function torrentHealthForMagnets(magnets) {
+  const unique = [...new Set((magnets || []).filter(Boolean))].slice(0, 20)
+  if (unique.length === 0) return {}
+  const result = await torrentScrape.scrapeMagnets(unique).catch(() => ({}))
+  if (qbCookie) { // qB уже запущен лаунчером — не поднимаем его ради проверки
+    try {
+      const list = await qbRequest('/api/v2/torrents/info')
+      const known = Array.isArray(list) ? qbTorrentsByMagnet(list, unique) : {}
+      for (const [magnet, t] of Object.entries(known)) {
+        if (!result[magnet]) result[magnet] = { hash: magnetHash(magnet), seeds: 0, peers: 0, trackers: 0 }
+        result[magnet].connected = { seeds: t.num_seeds || 0, peers: t.num_leechs || 0 }
+      }
+    } catch { /* qB недоступен — только данные трекеров */ }
   }
-
-  // Даём трекерам ответить: анонсируем принудительно несколько раз
-  const waited = addedHashes.length > 0
-  if (waited) {
-    for (let i = 0; i < 3; i++) {
-      await qbRequest('/api/v2/torrents/reannounce', 'POST', { hashes: addedHashes.join('|') }).catch(() => {})
-      await delay(3000)
-    }
-  }
-
-  // Считываем итоговые значения (и по уже добавленным, и по пробным)
-  let list = []
-  try { list = await qbRequest('/api/v2/torrents/info') } catch { list = [] }
-  if (!Array.isArray(list)) list = []
-
-  // Как в qBittorrent: "подключено (всего)".
-  // num_seeds/num_complete — сиды, num_leechs/num_incomplete — пиры.
-  const norm = (t, known) => {
-    if (!t) return { seeds: 0, totalSeeds: 0, leechers: 0, totalLeechers: 0, known: false }
-    const totalSeeds = t.num_complete ?? (t.num_seeds || 0)
-    const totalLeechers = t.num_incomplete ?? (t.num_leechs || 0)
-    return {
-      seeds: t.num_seeds || 0,
-      totalSeeds: totalSeeds || 0,
-      leechers: t.num_leechs || 0,
-      totalLeechers: totalLeechers || 0,
-      connected: t.num_seeds != null,
-      known: !!known,
-    }
-  }
-
-  for (const magnet of unique) {
-    let t = known[magnet]
-    if (!t) {
-      const h = magnetHash(magnet)
-      t = list.find(x => (h && String(x.hash || '').toLowerCase() === h) || x.magnet_uri === magnet)
-    }
-    result[magnet] = norm(t, !!known[magnet])
-  }
-
-  // Удаляем только пробные торренты
-  if (addedHashes.length > 0) {
-    await qbRequest('/api/v2/torrents/delete', 'POST', { hashes: addedHashes.join('|'), deleteFiles: 'false' }).catch(() => {})
-  }
-
   return result
 }
 
@@ -863,7 +811,7 @@ ipcMain.handle('torrent-remove', async (e, { id, deleteFiles }) => {
   await qbDeleteTorrent(id, deleteFiles === true)
 })
 ipcMain.handle('torrent-list', async () => [...httpList(), ...(await qbGetTorrents())])
-ipcMain.handle('torrent-peers', async (e, magnets) => qbPeersForMagnets(magnets))
+ipcMain.handle('torrent-health', async (e, magnets) => torrentHealthForMagnets(magnets))
 ipcMain.handle('http-download-start', async (e, opts) => httpDownloadStart(opts || {}))
 ipcMain.on('http-relink', (e, { id, url } = {}) => httpRelink(id, url))
 
@@ -1515,7 +1463,7 @@ const {
   freeSpace, pathSize, sameVolume, formatSize, rankGameExecutable, findGameRootFromExe,
   sanitizeName, uniqueDest, moveFolder, getGamesDir, loadRegistry, registerGame,
   removeGameEntry, launchInstalledGame, launchInstaller, waitProcessExit, unblockFolder,
-  extractNestedArchives, detectInstallerType, runInstallerSilently,
+  extractNestedArchives, detectInstallerType, runInstallerSilently, ISO_FILE_RE, mountIso, dismountIso,
   createDesktopShortcut, loadAppPaths, saveAppPaths, getBundled7z,
   systemDrive, normalizeDrive, listDrives, folderOnDrive, migrateCustomPaths, legacyDirs,
 } = installerModule
@@ -1533,8 +1481,20 @@ async function removeLauncherFiles(target) {
   return true
 }
 
+// Образы дисков, подключённые для установки: id загрузки → путь к .iso.
+// Отключаются, когда установочные файлы больше не нужны (dropDownload).
+const mountedIsos = new Map()
+
+async function releaseMountedIso(gameId) {
+  const iso = mountedIsos.get(gameId)
+  if (!iso) return
+  mountedIsos.delete(gameId)
+  await dismountIso(iso)
+}
+
 // Убирает загрузку после установки: торрент вместе с файлами или запись прямой загрузки
-function dropDownload(gameId, contentPath) {
+async function dropDownload(gameId, contentPath) {
+  await releaseMountedIso(gameId)
   if (!httpDownloads.has(gameId)) qbRequest('/api/v2/torrents/delete', 'POST', { hashes: gameId, deleteFiles: 'true' }).catch(() => {})
   httpDownloads.delete(gameId)
   return removeLauncherFiles(contentPath)
@@ -1758,7 +1718,53 @@ async function installGameImpl(gameId, opts = {}) {
       const entry = loadRegistry().find(g => g.id === gameId)
       if (entry && !entry.exePath) sendInstallProgress({ gameId, phase: 'idle', percent: -1 })
     })
-    return { ok: true, kind: 'installer', message: 'Установщик запущен — установите игру и укажите exe на странице игры' }
+    return { ok: true, kind: 'installer', wizard: true, message: 'Установщик запущен — установите игру и укажите exe на странице игры' }
+  }
+
+  // Образ диска подключается виртуальным диском: когда 7-Zip не смог его распаковать или
+  // установщик не справился с распакованной копией (старые игры требуют «настоящий» диск).
+  // Пока идёт установка мастером, образ остаётся подключённым — его отключит dropDownload,
+  // когда пользователь укажет exe или удалит игру.
+  const installFromIso = async (isoPath) => {
+    sendInstallProgress({ gameId, phase: 'install', percent: -1 })
+    let drive
+    try {
+      drive = await mountIso(isoPath)
+    } catch (err) {
+      sendInstallProgress({ gameId, phase: 'idle', percent: -1 })
+      return { error: 'Не удалось подключить образ диска: ' + (err.message || err) }
+    }
+    mountedIsos.set(gameId, isoPath)
+
+    const installer = findInstallerIn(drive)
+    if (installer) {
+      // установочные файлы — сама загрузка (образ): её уберёт dropDownload после установки
+      const res = await runInstallerFrom(installer, contentPath)
+      if (!res?.wizard) await releaseMountedIso(gameId)
+      return res
+    }
+
+    // Установщика нет, но на диске готовая игра — копируем её в папку игр
+    if (rankGameExecutable(drive, baseName)) {
+      const noSpace = await checkFreeSpace(isoPath, gamesDir, 1)
+      if (noSpace) { await releaseMountedIso(gameId); return { error: noSpace } }
+      const target = uniqueDest(path.join(gamesDir, baseName))
+      try {
+        await fs.promises.cp(drive, target, { recursive: true })
+      } catch (err) {
+        await releaseMountedIso(gameId)
+        await fs.promises.rm(target, { recursive: true, force: true }).catch(() => {})
+        return { error: 'Не удалось скопировать игру с образа: ' + (err.message || err) }
+      }
+      await releaseMountedIso(gameId)
+      await unblockFolder(target)
+      const entry = await finalizeInstall(target, 'archive')
+      return { ok: true, kind: 'archive', installPath: target, exePath: entry.exePath }
+    }
+
+    await releaseMountedIso(gameId)
+    sendInstallProgress({ gameId, phase: 'idle', percent: -1 })
+    return { error: 'В образе диска не найдены ни установщик, ни файл игры' }
   }
 
   let dest
@@ -1771,11 +1777,16 @@ async function installGameImpl(gameId, opts = {}) {
     if (noSpace) return { error: noSpace }
     dest = uniqueDest(path.join(gamesDir, baseName))
     sendInstallProgress({ gameId, phase: 'install', percent: 0 })
+    const isIso = ISO_FILE_RE.test(det.archivePath)
     try {
       await extractArchive(det.archivePath, dest, (pct) => sendInstallProgress({ gameId, phase: 'install', percent: pct }))
     } catch (err) {
       // не оставляем полураспакованную папку
       await fs.promises.rm(dest, { recursive: true, force: true }).catch(() => {})
+      if (isIso) {
+        console.warn('[Install] образ не распаковался, подключаю его:', err.message || err)
+        return installFromIso(det.archivePath)
+      }
       return { error: 'Ошибка распаковки: ' + (err.message || err) }
     }
     sendInstallProgress({ gameId, phase: 'install', percent: -1 })
@@ -1797,9 +1808,24 @@ async function installGameImpl(gameId, opts = {}) {
     // В архиве оказался установщик, а не готовая игра: запускаем его из распакованной папки
     if (!rankGameExecutable(dest, baseName)) {
       const installer = findInstallerIn(dest)
+      if (installer && isIso) {
+        // образ пока не удаляем: он понадобится, если тихая установка не получится
+        const silent = loadAppPaths().autoInstallSetups !== false ? await installSilently(installer, dest) : null
+        if (silent && !silent.fallback) {
+          if (silent.ok) await dropDownload(gameId, contentPath)
+          return silent
+        }
+        await fs.promises.rm(silent?.source || dest, { recursive: true, force: true }).catch(() => {})
+        return installFromIso(det.archivePath)
+      }
       if (installer) {
         await dropDownload(gameId, contentPath)
         return runInstallerFrom(installer, dest)
+      }
+      // в образе нет ни игры, ни установщика (например, нестандартная структура) — подключаем
+      if (isIso) {
+        await fs.promises.rm(dest, { recursive: true, force: true }).catch(() => {})
+        return installFromIso(det.archivePath)
       }
     }
     const entry = await finalizeInstall(dest, 'archive')

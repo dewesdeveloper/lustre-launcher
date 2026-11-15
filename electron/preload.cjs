@@ -117,7 +117,7 @@ contextBridge.exposeInMainWorld('electron', {
   torrentResume: (id) => ipcRenderer.invoke('torrent-resume', id),
   torrentRemove: (opts) => ipcRenderer.invoke('torrent-remove', opts),
   torrentList: () => ipcRenderer.invoke('torrent-list'),
-  torrentPeers: (magnets) => ipcRenderer.invoke('torrent-peers', magnets),
+  torrentHealth: (magnets) => ipcRenderer.invoke('torrent-health', magnets),
   // Порт веб-интерфейса qBittorrent (настройки → Хранилище): лаунчер
   // подключается к Web API по этому порту, менять можно отсюда
   qbWebPortGet: () => ipcRenderer.invoke('qb-webport-get'),

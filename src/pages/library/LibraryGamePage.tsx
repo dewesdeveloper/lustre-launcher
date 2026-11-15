@@ -627,6 +627,7 @@ export default function LibraryGamePage() {
       {game && (
         <SourcePickerModal
           open={sourcePickerOpen}
+          gameId={Number(game.ID ?? id)}
           gameTitle={game.title}
           sources={game.sources || []}
           onClose={() => setSourcePickerOpen(false)}

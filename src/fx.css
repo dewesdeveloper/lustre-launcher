@@ -224,9 +224,11 @@
 .tl-avatar-frame:hover::after  { transform: translate(3px, 3px); filter: drop-shadow(0 0 4px var(--pink)); }
 
 /* полоса прокрутки — неоновый градиент */
+::-webkit-scrollbar-thumb,
 .custom-scrollbar::-webkit-scrollbar-thumb {
   background: linear-gradient(180deg, rgb(var(--accent-rgb) / .55), rgb(var(--violet-rgb) / .55));
 }
+::-webkit-scrollbar-thumb:hover,
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(180deg, var(--pink), var(--violet2));
 }

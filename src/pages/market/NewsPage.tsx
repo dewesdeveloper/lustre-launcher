@@ -1,72 +1,126 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { IconArrowRight, IconLoader2, IconNews, IconPlus, IconRefresh, IconSparkles, IconTag } from '@tabler/icons-react';
+import { IconArrowRight, IconLoader2, IconNews, IconPlus, IconRefresh, IconSearch, IconSparkles, IconTag, IconX } from '@tabler/icons-react';
+import { StoreSubNav } from './StoreSubNav';
 import { getNews, type NewsItem } from '../../api/news';
 import { useAuth } from '../../context/AuthContext';
 import { hasAdmin } from '../../admin';
 
-/** Рубрики ленты: подпись фильтра, подпись метки на карточке и её цвета */
-const RUBRICS: { id: string; filter: string; badge: string; tone: string }[] = [
-  { id: 'update', filter: 'Обновления', badge: 'Обновление', tone: 'text-cyan bg-cyan/10 border-cyan/20' },
-  { id: 'game', filter: 'Игры', badge: 'Игры', tone: 'text-accent bg-accent/10 border-accent/20' },
-  { id: 'cosmetics', filter: 'Оформление', badge: 'Оформление', tone: 'text-violet bg-violet/10 border-violet/20' },
-  { id: 'subscription', filter: 'Подписки', badge: 'Подписки', tone: 'text-amber-400 bg-amber-400/10 border-amber-400/20' },
-  { id: 'community', filter: 'Сообщество', badge: 'Сообщество', tone: 'text-sky-400 bg-sky-500/10 border-sky-500/20' },
-  { id: 'general', filter: 'Общее', badge: 'Общее', tone: 'text-pearl/72 bg-white/5 border-white/10' },
+/** Рубрики ленты: подпись фильтра и цвет метки (классы tl-chip) */
+const RUBRICS: { id: string; label: string; chip: string }[] = [
+  { id: 'update', label: 'Обновления', chip: 'common' },
+  { id: 'game', label: 'Игры', chip: 'rare' },
+  { id: 'cosmetics', label: 'Оформление', chip: 'epic' },
+  { id: 'subscription', label: 'Подписки', chip: 'legendary' },
+  { id: 'community', label: 'Сообщество', chip: 'ok' },
+  { id: 'general', label: 'Общее', chip: 'age' },
 ];
 const GENERAL = RUBRICS[RUBRICS.length - 1];
 const rubricOf = (id: string) => RUBRICS.find((r) => r.id === id) ?? GENERAL;
 
 const longDate = (iso: string) => new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' });
+const shortDate = (iso: string) => new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' });
 
-function NewsCard({ item, index, onLink }: { item: NewsItem; index: number; onLink: (to: string) => void }) {
-  const rubric = rubricOf(item.category);
+/** Метки новости: рубрика, «для вас», дата */
+function Meta({ item, long = false }: { item: NewsItem; long?: boolean }) {
+  const r = rubricOf(item.category);
   return (
-    <motion.article
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, delay: index * 0.04 }}
-      className="bg-[#09070c] border border-white/5 rounded-[2rem] p-7 hover:border-accent/25 transition-all duration-500"
-    >
-      <div className="flex flex-wrap items-center gap-2.5 mb-3">
-        <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border ${rubric.tone}`}>{rubric.badge}</span>
-        {item.for_you && (
-          <span className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border border-accent/30 bg-accent/10 text-accent">
-            <IconSparkles size={10} /> Для вас
-          </span>
-        )}
-        {item.created_at && <time className="ml-auto text-[10px] font-black uppercase tracking-widest text-pearl/60">{longDate(item.created_at)}</time>}
-      </div>
-
-      {item.image_url && <img src={item.image_url} alt="" className="w-full h-52 object-cover rounded-2xl mb-4 border border-white/5" />}
-
-      <h2 className="text-lg font-black text-white uppercase tracking-tight">{item.title}</h2>
-      <p className="tl-wrap text-sm text-pearl/70 font-medium leading-relaxed whitespace-pre-wrap mt-2.5">{item.content}</p>
-
-      {!!item.tags?.length && (
-        <div className="flex flex-wrap items-center gap-2 mt-4">
-          <IconTag size={12} className="text-pearl/55" />
-          {item.tags.map((t) => (
-            <span key={t.id} className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-widest bg-violet/10 border border-violet/20 text-violet/80">{t.name}</span>
-          ))}
-        </div>
+    <div className="flex flex-wrap items-center gap-2">
+      <span className={`tl-chip ${r.chip}`}>{r.label}</span>
+      {item.for_you && <span className="tl-chip rare"><IconSparkles size={10} className="mr-1 inline align-[-1px]" />Для вас</span>}
+      {item.created_at && (
+        <time className="tl-term ml-auto text-[14px] text-[var(--muted-2)]">{long ? longDate(item.created_at) : shortDate(item.created_at)}</time>
       )}
-
-      {item.link && (
-        <button
-          type="button"
-          onClick={() => onLink(item.link)}
-          className="group mt-5 flex items-center gap-2 px-5 py-3 bg-white/[0.04] border border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] text-pearl/60 hover:text-white hover:border-accent/40 transition-all"
-        >
-          Подробнее <IconArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
-        </button>
-      )}
-    </motion.article>
+    </div>
   );
 }
 
-/** Лента новостей платформы с фильтром по рубрикам; администратору — кнопка создания. */
+function Tags({ item }: { item: NewsItem }) {
+  if (!item.tags?.length) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <IconTag size={12} className="text-[var(--muted-2)]" />
+      {item.tags.map((t) => <span key={t.id} className="tl-chip age">{t.name}</span>)}
+    </div>
+  );
+}
+
+/** Главная новость — крупно, картинка слева */
+function Featured({ item, onRead }: { item: NewsItem; onRead: () => void }) {
+  return (
+    <article className="tl-panel tl-gcard group grid cursor-pointer grid-cols-1 overflow-hidden lg:grid-cols-[1.4fr_1fr]" onClick={onRead}>
+      <div className="relative aspect-video overflow-hidden bg-[#121017] lg:aspect-auto lg:min-h-[320px]">
+        {item.image_url
+          ? <img src={item.image_url} alt="" className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-[1.03]" />
+          : <div className="absolute inset-0 bg-gradient-to-br from-violet/30 via-[#121017] to-accent/25" />}
+        <span className="tl-head absolute left-4 top-4 bg-black/60 px-2 py-1 text-[9px] font-bold uppercase tracking-[.24em] text-accent">// Главное</span>
+      </div>
+      <div className="flex flex-col gap-4 p-7">
+        <Meta item={item} long />
+        <h2 className="tl-pixel text-[22px] leading-tight text-white transition-colors group-hover:text-accent">{item.title}</h2>
+        <p className="tl-term line-clamp-6 whitespace-pre-wrap text-[16px] leading-relaxed text-pearl/75">{item.content}</p>
+        <div className="mt-auto flex flex-wrap items-center justify-between gap-3">
+          <Tags item={item} />
+          <span className="tl-btn solid">Читать <IconArrowRight size={14} /></span>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function NewsCard({ item, onRead }: { item: NewsItem; onRead: () => void }) {
+  return (
+    <article className="tl-panel tl-gcard group flex cursor-pointer flex-col overflow-hidden" onClick={onRead}>
+      {item.image_url && (
+        <div className="relative aspect-[16/7] overflow-hidden border-b border-[var(--line)] bg-[#121017]">
+          <img src={item.image_url} alt="" loading="lazy" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" />
+        </div>
+      )}
+      <div className="flex flex-1 flex-col gap-3 p-5">
+        <Meta item={item} />
+        <h3 className="line-clamp-2 !text-[13px] transition-colors group-hover:text-accent">{item.title}</h3>
+        <p className="tl-term line-clamp-4 whitespace-pre-wrap text-[15px] leading-relaxed text-pearl/70">{item.content}</p>
+        <span className="tl-head mt-auto flex items-center gap-1.5 pt-1 text-[10px] font-bold uppercase tracking-[.16em] text-[var(--muted)] group-hover:text-accent">
+          Читать полностью <IconArrowRight size={12} />
+        </span>
+      </div>
+    </article>
+  );
+}
+
+/** Окно чтения новости целиком */
+function Reader({ item, onClose, onLink }: { item: NewsItem; onClose: () => void; onLink: (to: string) => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-6 backdrop-blur-sm" onClick={onClose}>
+      <article className="tl-panel flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden animate-in fade-in duration-200" onClick={(e) => e.stopPropagation()}>
+        {item.image_url && <img src={item.image_url} alt="" className="max-h-72 w-full shrink-0 border-b border-[var(--line)] object-cover" />}
+        <div className="custom-scrollbar flex-1 overflow-y-auto p-7">
+          <div className="mb-4 flex items-start gap-3">
+            <div className="flex-1"><Meta item={item} long /></div>
+            <button type="button" onClick={onClose} title="Закрыть" className="tl-muted shrink-0 transition-colors hover:text-white"><IconX size={18} /></button>
+          </div>
+          <h2 className="tl-pixel text-[22px] leading-tight text-white">{item.title}</h2>
+          <p className="tl-wrap tl-term mt-4 whitespace-pre-wrap text-[17px] leading-relaxed text-pearl/80">{item.content}</p>
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+            <Tags item={item} />
+            {item.link && (
+              <button type="button" onClick={() => onLink(item.link)} className="tl-btn solid">Подробнее <IconArrowRight size={14} /></button>
+            )}
+          </div>
+        </div>
+      </article>
+    </div>,
+    document.body,
+  );
+}
+
+/** Лента новостей платформы: главная новость, рубрики, поиск и «только для вас»; администратору — создание. */
 export default function NewsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -74,75 +128,110 @@ export default function NewsPage() {
   const [rubric, setRubric] = useState('all');
   const [items, setItems] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [query, setQuery] = useState('');
+  const [forYou, setForYou] = useState(false);
+  const [reading, setReading] = useState<NewsItem | null>(null);
 
   const refresh = useCallback(() => {
     setLoading(true);
+    setError(false);
     getNews(rubric)
-      .then(setItems, () => setItems([]))
+      .then(setItems, () => { setItems([]); setError(true); })
       .finally(() => setLoading(false));
   }, [rubric]);
 
   useEffect(refresh, [refresh]);
 
-  const filters = [{ id: 'all', filter: 'Все' }, ...RUBRICS];
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return items.filter((n) => (!forYou || n.for_you)
+      && (!q || `${n.title}\n${n.content}\n${(n.tags ?? []).map((t) => t.name).join(' ')}`.toLowerCase().includes(q)));
+  }, [items, query, forYou]);
+  const filtered = !!query.trim() || forYou;
+  const [featured, ...rest] = shown;
+  const forYouCount = items.filter((n) => n.for_you).length;
+
+  const openLink = (to: string) => {
+    setReading(null);
+    if (/^https?:\/\//i.test(to)) window.open(to, '_blank', 'noopener,noreferrer');
+    else navigate(to);
+  };
 
   return (
-    <div className="p-8 max-w-4xl mx-auto animate-in fade-in duration-700 text-left">
-      <header className="flex items-start justify-between gap-4 mb-7">
-        <div>
-          <h1 className="text-4xl font-black italic uppercase tracking-tighter text-white flex items-center gap-3">
-            <IconNews className="text-accent" size={32} /> Новости <span className="text-accent">Lustre</span>
-          </h1>
-          <p className="text-pearl/60 text-[10px] font-black uppercase tracking-[0.3em] mt-2">Персональная лента: обновления, игры, оформление и подписки</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {canPublish && (
-            <button
-              type="button"
-              onClick={() => navigate('/admin/news')}
-              className="flex items-center gap-2 px-4 py-2.5 bg-accent text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-lg shadow-accent/20"
-            >
-              <IconPlus size={14} /> Создать
+    <div className="animate-in fade-in pb-12 duration-500 text-left">
+      <StoreSubNav />
+      <div className="mx-auto max-w-[1240px] px-6 pt-8">
+        <header className="tl-panel relative mb-6 overflow-hidden p-8">
+          <div aria-hidden className="pointer-events-none absolute inset-0 opacity-70" style={{
+            backgroundImage: 'radial-gradient(560px 220px at 90% 0%, rgb(var(--accent-rgb)/.2), transparent 70%), linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px)',
+            backgroundSize: 'auto, 28px 28px, 28px 28px',
+          }} />
+          <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="tl-head mb-3 text-[10px] font-bold uppercase tracking-[.3em] text-accent">// Newsroom</p>
+              <h1 className="tl-pixel flex items-center gap-3 text-[30px] leading-tight text-white" style={{ textShadow: 'var(--glow)' }}>
+                <IconNews size={30} className="text-accent" /> Новости <span className="text-accent">Lustre</span>
+              </h1>
+              <p className="tl-term mt-2 text-[16px] text-[var(--muted)]">Обновления платформы, игры, оформление и подписки. Отмеченное «Для вас» подобрано по вашим интересам.</p>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              {canPublish && (
+                <button type="button" onClick={() => navigate('/admin/news')} className="tl-btn solid"><IconPlus size={14} /> Создать</button>
+              )}
+              <button type="button" title="Обновить" onClick={refresh} className="tl-btn ghost"><IconRefresh size={14} /></button>
+            </div>
+          </div>
+        </header>
+
+        <div className="mb-8 flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div className="tl-tabs">
+            {[{ id: 'all', label: 'Все' }, ...RUBRICS].map((r) => (
+              <button key={r.id} type="button" onClick={() => setRubric(r.id)} className={`tl-tab ${rubric === r.id ? 'active' : ''}`}>{r.label}</button>
+            ))}
+          </div>
+          <div className="flex flex-1 items-center gap-2 lg:justify-end">
+            <button type="button" aria-pressed={forYou} onClick={() => setForYou((v) => !v)} disabled={!forYouCount}
+              className={`tl-chip cursor-pointer disabled:cursor-default disabled:opacity-50 ${forYou ? 'rare' : 'text-[var(--muted)] hover:text-white'}`}>
+              <IconSparkles size={10} className="mr-1 inline align-[-1px]" />Для вас{forYouCount ? ` · ${forYouCount}` : ''}
             </button>
-          )}
-          <button
-            type="button"
-            title="Обновить"
-            onClick={refresh}
-            className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-pearl/70 hover:text-white hover:border-accent/40 transition-all"
-          >
-            <IconRefresh size={16} />
-          </button>
+            <div className="relative w-full lg:w-72">
+              <div className="tl-prefix">
+                <span className="at"><IconSearch size={15} /></span>
+                <input value={query} onChange={(e) => setQuery(e.target.value)} data-search-hotkey="page" placeholder="Поиск по новостям…" className="tl-field dense" />
+              </div>
+              {query && (
+                <button type="button" title="Очистить" onClick={() => setQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)] hover:text-accent"><IconX size={13} /></button>
+              )}
+            </div>
+          </div>
         </div>
-      </header>
 
-      <nav className="flex flex-wrap gap-2 mb-7">
-        {filters.map((f) => (
-          <button
-            key={f.id}
-            type="button"
-            onClick={() => setRubric(f.id)}
-            className={`px-3.5 py-2 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${rubric === f.id
-              ? 'bg-gradient-to-r from-accent to-violet text-white border-transparent shadow-[0_0_18px_rgb(var(--accent-rgb)/0.3)]'
-              : 'bg-white/[0.02] border-white/5 text-pearl/60 hover:border-white/15'}`}
-          >
-            {f.filter}
-          </button>
-        ))}
-      </nav>
+        {loading ? (
+          <div className="flex justify-center py-24"><IconLoader2 className="animate-spin text-accent" size={30} /></div>
+        ) : shown.length === 0 ? (
+          <div className="tl-panel p-14 text-center">
+            <IconNews className="mx-auto mb-4 text-[var(--muted-2)]" size={32} />
+            <p className="tl-head text-[11px] font-bold uppercase tracking-[.2em] text-white">
+              {error ? 'Не удалось загрузить новости' : filtered ? 'Ничего не найдено' : 'Новостей пока нет'}
+            </p>
+            {filtered && !error && (
+              <button type="button" onClick={() => { setQuery(''); setForYou(false); }} className="tl-btn ghost mx-auto mt-5">Сбросить поиск</button>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-6">
+            <Featured item={featured} onRead={() => setReading(featured)} />
+            {rest.length > 0 && (
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {rest.map((n) => <NewsCard key={n.id} item={n} onRead={() => setReading(n)} />)}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
-      {loading ? (
-        <div className="flex justify-center py-24"><IconLoader2 className="animate-spin text-accent" size={30} /></div>
-      ) : items.length === 0 ? (
-        <div className="rounded-[2rem] bg-white/[0.02] border border-white/5 p-14 text-center">
-          <IconNews className="mx-auto text-pearl/60 mb-4" size={32} />
-          <p className="text-sm font-black uppercase tracking-widest text-pearl/60">Новостей пока нет</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {items.map((n, i) => <NewsCard key={n.id} item={n} index={i} onLink={(to) => navigate(to)} />)}
-        </div>
-      )}
+      {reading && <Reader item={reading} onClose={() => setReading(null)} onLink={openLink} />}
     </div>
   );
 }

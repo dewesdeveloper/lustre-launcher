@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   buildInviteLink, deleteCommunity, getCommunities, getCommunityInvite, getCommunityStats,
   type Community, type CommunityStats,
@@ -20,6 +20,7 @@ import InviteModal from './components/InviteModal';
 import { formatOf } from './formats';
 
 const STATS_POLL_MS = 60_000;
+const FEED_TABS: CommunityFeedKind[] = ['screenshots', 'workshop', 'broadcasts'];
 
 /**
  * Живые цифры платформы: загрузка сразу, затем раз в минуту, пока вкладка на экране.
@@ -54,7 +55,9 @@ export default function CommunityPage() {
   const { getLibrary } = useSettings();
   const stats = useLiveStats(!!getLibrary().low_bandwidth);
 
-  const [tab, setTab] = useState('trending');
+  // вкладка — в адресе (?tab=workshop), чтобы на неё вели пункты нижней навигации
+  const [params, setParams] = useSearchParams();
+  const tab = FEED_TABS.includes(params.get('tab') as CommunityFeedKind) ? (params.get('tab') as string) : 'trending';
   const [communities, setCommunities] = useState<Community[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -78,8 +81,8 @@ export default function CommunityPage() {
     const created = (location.state as { created?: Community } | null)?.created;
     if (!location.state) return;
     if (created?.is_private && created.invite_code) setInvite({ name: created.name, code: created.invite_code });
-    navigate(location.pathname, { replace: true }); // чтобы при возврате окно не всплыло снова
-  }, [location.state, location.pathname, navigate]);
+    navigate(location.pathname + location.search, { replace: true }); // чтобы при возврате окно не всплыло снова
+  }, [location.state, location.pathname, location.search, navigate]);
 
   // фильтр по формату и сортировка; «самое большое сообщество» — крупно над сеткой (только без фильтра)
   const filtered = useMemo(() => {
@@ -108,7 +111,7 @@ export default function CommunityPage() {
       navigate('/community/discussions');
       return;
     }
-    setTab(id);
+    setParams(id === 'trending' ? {} : { tab: id }, { replace: true });
     setPage(1);
   };
 

@@ -32,7 +32,7 @@ function sections(username?: string): Section[] {
         // персональная подборка требует входа
         ...(username ? [{ label: 'Рекомендации', to: '/store/recommendations' }] : []),
         { label: 'Подписки', to: '/subscriptions' },
-        { label: 'Тренды', to: '/store' },
+        { label: 'Тренды', to: '/store/trends' },
         { label: 'Новости', to: '/news' },
         { label: 'Магазин кастомизаций', to: '/cosmetics', divider: true },
         { label: 'Пакеты валюты', to: '/shop/packages' },
@@ -58,7 +58,9 @@ function sections(username?: string): Section[] {
       links: [
         { label: 'Домашняя страница', to: '/community' },
         { label: 'Обсуждения', to: '/community/discussions' },
-        { label: 'Мастерская', to: '/community' },
+        { label: 'Скриншоты', to: '/community?tab=screenshots' },
+        { label: 'Мастерская', to: '/community?tab=workshop' },
+        { label: 'Трансляции', to: '/community?tab=broadcasts' },
         { label: 'Поддержка', to: '/support' },
       ],
     },
