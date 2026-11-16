@@ -17,12 +17,18 @@ export type NewsItem = {
   updated_at?: string;
   score: number;
   for_you: boolean;
+  /** важная: при публикации все получили уведомление */
+  important?: boolean;
+  /** сколько разных пользователей открыли новость */
+  views?: number;
 };
 
 export type NewNews = Pick<NewsItem, 'title' | 'content' | 'category'> & {
   image_url?: string;
   link?: string;
   tag_ids?: number[];
+  /** оповестить всех: всплывашка в лаунчере, колокольчик, push на телефон */
+  important?: boolean;
 };
 
 /** Новости; category — фильтр по разделу ('all' или пусто — все разделы) */
@@ -35,6 +41,16 @@ export async function getNews(category?: string): Promise<NewsItem[]> {
 export async function createNews(payload: NewNews): Promise<NewsItem> {
   const { data } = await api.post<NewsItem>('/news', payload);
   return data;
+}
+
+/** Отметить, что новость открыта (один раз на пользователя); возвращает число просмотров */
+export async function viewNews(id: number): Promise<number | null> {
+  try {
+    const { data } = await api.post<{ views: number }>(`/news/${id}/view`);
+    return typeof data?.views === 'number' ? data.views : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function deleteNews(id: number): Promise<void> {

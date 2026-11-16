@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
-import { IconArrowRight, IconLoader2, IconNews, IconPlus, IconRefresh, IconSearch, IconSparkles, IconTag, IconX } from '@tabler/icons-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { IconArrowRight, IconEye, IconLoader2, IconNews, IconPlus, IconRefresh, IconSearch, IconSparkles, IconTag, IconX } from '@tabler/icons-react';
 import { StoreSubNav } from './StoreSubNav';
-import { getNews, type NewsItem } from '../../api/news';
+import { getNews, viewNews, type NewsItem } from '../../api/news';
 import { useAuth } from '../../context/AuthContext';
 import { hasAdmin } from '../../admin';
 
@@ -29,8 +29,13 @@ function Meta({ item, long = false }: { item: NewsItem; long?: boolean }) {
     <div className="flex flex-wrap items-center gap-2">
       <span className={`tl-chip ${r.chip}`}>{r.label}</span>
       {item.for_you && <span className="tl-chip rare"><IconSparkles size={10} className="mr-1 inline align-[-1px]" />Для вас</span>}
+      {typeof item.views === 'number' && item.views > 0 && (
+        <span className="tl-term ml-auto flex items-center gap-1 text-[14px] text-[var(--muted-2)]" title="Просмотры">
+          <IconEye size={13} /> {item.views.toLocaleString('ru-RU')}
+        </span>
+      )}
       {item.created_at && (
-        <time className="tl-term ml-auto text-[14px] text-[var(--muted-2)]">{long ? longDate(item.created_at) : shortDate(item.created_at)}</time>
+        <time className={`tl-term ${typeof item.views === 'number' && item.views > 0 ? '' : 'ml-auto '} text-[14px] text-[var(--muted-2)]`}>{long ? longDate(item.created_at) : shortDate(item.created_at)}</time>
       )}
     </div>
   );
@@ -131,7 +136,17 @@ export default function NewsPage() {
   const [error, setError] = useState(false);
   const [query, setQuery] = useState('');
   const [forYou, setForYou] = useState(false);
-  const [reading, setReading] = useState<NewsItem | null>(null);
+  const [reading, setReadingState] = useState<NewsItem | null>(null);
+  // Открытие новости засчитывает просмотр (сервер считает одного пользователя один раз)
+  const setReading = useCallback((n: NewsItem | null) => {
+    setReadingState(n);
+    if (!n) return;
+    void viewNews(n.id).then((views) => {
+      if (views === null) return;
+      setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, views } : x)));
+      setReadingState((cur) => (cur && cur.id === n.id ? { ...cur, views } : cur));
+    });
+  }, []);
 
   const refresh = useCallback(() => {
     setLoading(true);
@@ -142,6 +157,22 @@ export default function NewsPage() {
   }, [rubric]);
 
   useEffect(refresh, [refresh]);
+
+  // Переход из уведомления о важной новости: /news?id=… — сразу открываем её
+  const [params, setParams] = useSearchParams();
+  const openId = Number(params.get('id')) || 0;
+  useEffect(() => {
+    if (!openId || loading) return;
+    const found = items.find((n) => n.id === openId);
+    if (found) {
+      setReading(found);
+      setParams({}, { replace: true });
+    } else if (rubric !== 'all') {
+      setRubric('all'); // новость из другой рубрики — ищем во всех
+    } else {
+      setParams({}, { replace: true });
+    }
+  }, [openId, items, loading, rubric, setParams, setReading]);
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();

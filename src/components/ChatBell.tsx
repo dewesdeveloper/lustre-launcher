@@ -11,6 +11,7 @@ import { openChatWindow } from '../utils/openChat';
 import { BELL_REFRESH_EVENT } from '../utils/bell';
 import { needsEmail } from '../utils/accountEmail';
 import { nativeNotify } from '../utils/nativeNotify';
+import { useImportantNews } from './chatbell/useImportantNews';
 import { getNotifyPrefs, playNotifSound } from '../utils/notifyPrefs';
 import { isChatMuted, syncChatMutes } from '../api/chatMutes';
 import Tooltip from './Tooltip';
@@ -72,6 +73,8 @@ export const ChatBell = () => {
   commentsRef.current = comments;
   // Аккаунт из Steam/GitHub без почты: пункт в «Системных», пока почту не привяжут
   const needEmail = !!user?.id && needsEmail(user?.email);
+  // важные новости: всплывашка при публикации и запись в колокольчике, пока не открыта
+  const news = useImportantNews(user?.id);
 
   useEffect(() => {
     if (!needEmail || !user?.id) return;
@@ -173,9 +176,10 @@ export const ChatBell = () => {
     markCommentsSeen();
     try { localStorage.setItem(bonusSeenKey(user?.id || 0), bonusStamp.current); } catch { /* ignore */ }
     setBonusReady(false);
+    news.markSeen(news.unseen.map((n) => n.id));
     // comments не трогаем — newComments пересчитывается от seenTs() в localStorage
     setComments((prev) => (prev.length ? [...prev] : prev));
-  }, [markCommentsSeen, user?.id]);
+  }, [markCommentsSeen, user?.id, news]);
 
   // Полное обновление по фокусу/видимости — с троттлингом, чтобы не дёргать
   // 5 запросов на каждый alt+tab
@@ -332,6 +336,7 @@ export const ChatBell = () => {
     newComments.length +
     (bonusReady ? 1 : 0) +
     (needEmail ? 1 : 0) +
+    news.unseen.length +
     staffCount;
 
   const unreadConvs = convs.filter((c) => c.unread > 0).slice(0, 4);
@@ -366,7 +371,7 @@ export const ChatBell = () => {
         open={open}
         onClose={() => setOpen(false)}
         total={total}
-        canMarkRead={unread + newComments.length + (bonusReady ? 1 : 0) > 0}
+        canMarkRead={unread + newComments.length + (bonusReady ? 1 : 0) + news.unseen.length > 0}
         bonusReady={bonusReady}
         needEmail={needEmail}
         onBindEmail={() => navigate('/settings')}
@@ -381,6 +386,8 @@ export const ChatBell = () => {
         newComments={newComments}
         onOpenProfile={() => navigate(`/profile/${user?.username}`)}
         onMarkAllRead={markAllReadNow}
+        importantNews={news.unseen}
+        onOpenNews={(id) => { news.markSeen([id]); navigate(`/news?id=${id}`); }}
         extra={AdminBellSection && staffCount > 0 ? <AdminBellSection count={staffCount} onClose={() => setOpen(false)} /> : null}
       />
     </div>

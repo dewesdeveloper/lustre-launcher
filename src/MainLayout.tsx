@@ -51,12 +51,13 @@ export default function MainLayout({ children }: { children?: ReactNode }) {
   // здесь — переход к нужному разделу
   useEffect(() => {
     const electron = (window as any).electron;
-    const off = electron?.onNotifyClick?.((payload: { type?: string; userId?: number; username?: string } | null) => {
+    const off = electron?.onNotifyClick?.((payload: { type?: string; userId?: number; username?: string; id?: number } | null) => {
       try { window.focus(); } catch { /* ignore */ }
       if (payload?.type === 'friends') navigate('/friends');
       else if (payload?.type === 'profile' && payload.username) navigate(`/profile/${encodeURIComponent(payload.username)}`);
       else if (payload?.type === 'chat' && payload.userId) openChatWindow(payload.userId);
       else if (payload?.type === 'group') openChatWindow();
+      else if (payload?.type === 'news' && payload.id) navigate(`/news?id=${payload.id}`);
       else if (payload?.type === 'settings') navigate('/settings');
       // payload.type === 'call' — оверлей звонка и так открыт в фокусе
     });

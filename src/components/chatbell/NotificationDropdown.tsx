@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, Check, X, UserPlus, MessageSquare, MessageCircle, Gift, Mail } from 'lucide-react';
+import { Bell, Check, X, UserPlus, MessageSquare, MessageCircle, Gift, Mail, Megaphone } from 'lucide-react';
+import type { ImportantNews } from './useImportantNews';
 import type { ChatConversation } from '../../api/chat';
 import CaratIcon from '../icons/CaratIcon';
 import { NotificationSection } from './NotificationSection';
@@ -50,13 +51,16 @@ interface NotificationDropdownProps {
   onMarkAllRead?: () => void;
   /** Дополнительный раздел сверху (из закрытого модуля админки) */
   extra?: ReactNode;
+  /** Важные новости, которые ещё не открывали */
+  importantNews?: ImportantNews[];
+  onOpenNews?: (id: number) => void;
 }
 
 export const NotificationDropdown = ({
   open, onClose, total, canMarkRead, bonusReady, needEmail, onBindEmail, onOpenCosmetics,
   requests, busyReq, onAcceptRequest, onDeclineRequest,
   unread, unreadConvs, onOpenChat, newComments, onOpenProfile,
-  onMarkAllRead, extra,
+  onMarkAllRead, extra, importantNews = [], onOpenNews,
 }: NotificationDropdownProps) => (
   <AnimatePresence>
     {open && (
@@ -96,6 +100,28 @@ export const NotificationDropdown = ({
         )}
 
         {extra}
+
+        {/* Важные новости — сверху: о них оповещают всех */}
+        {importantNews.length > 0 && (
+          <NotificationSection icon={<Megaphone size={12} />} count={importantNews.length} title="Важные новости">
+            {importantNews.map((n) => (
+              <NotificationRow
+                key={n.id}
+                onClick={() => { onClose(); onOpenNews?.(n.id); }}
+                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/[0.04] transition-colors text-left cursor-pointer"
+              >
+                <div className="w-8 h-8 rounded-lg bg-accent/10 border border-accent/30 flex items-center justify-center shrink-0 text-accent">
+                  <Megaphone size={14} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-bold text-pearl truncate" title={n.title}>{n.title}</p>
+                  {n.preview && <p className="text-[10px] text-pearl/60 line-clamp-2">{n.preview}</p>}
+                </div>
+                <span className="w-2 h-2 rounded-full bg-accent shrink-0" />
+              </NotificationRow>
+            ))}
+          </NotificationSection>
+        )}
 
         {/* Системные */}
         {(bonusReady || needEmail) && (
