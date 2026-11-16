@@ -14,6 +14,7 @@ import selfUpdate from './selfUpdate.cjs'
 import hosts from './hosts.cjs'
 import defender from './defender.cjs'
 import torrentScrape from './torrentScrape.cjs'
+import cloudSaves from './cloudSaves.cjs'
 import { File as MegaFile } from 'megajs'
 
 const { autoUpdater } = electronUpdater
@@ -161,7 +162,14 @@ process.on('unhandledRejection', (err) => {
 })
 
 // --- Deep links (lustre://) ---
-// Пример: lustre://game/123 — открыть игру в лаунчере
+// Пример: lustre://game/123 — открыть игру в лаунчере.
+// Ссылку может прислать кто угодно (сайт, сообщение), поэтому открываются только разделы из
+// списка ниже: админка, настройки и служебные окна по внешней ссылке недоступны.
+const DEEP_LINK_SECTIONS = new Set([
+  'games', 'store', 'library', 'community', 'profile', 'friends', 'news', 'subscriptions',
+  'payment', 'shop', 'cosmetics', 'support', 'legal', 'privacy', 'subscriber-agreement', 'downloads', 'activity',
+])
+
 function deepLinkToRoute(rawUrl) {
   try {
     const u = new URL(rawUrl)
@@ -170,10 +178,13 @@ function deepLinkToRoute(rawUrl) {
     const segments = u.pathname.split('/').filter(Boolean)
     const gameId = u.searchParams.get('game') || segments[0]
     if (host === 'game' || host === 'games' || host === 'install') {
-      return gameId ? `/games/${gameId}` : '/store'
+      return gameId && /^\d+$/.test(gameId) ? `/games/${gameId}` : '/store'
     }
-    if (!host) return '/' + segments.join('/') + u.search
-    return `/${host}${u.pathname}${u.search}`
+    const route = host ? `/${host}${u.pathname}${u.search}` : '/' + segments.join('/') + u.search
+    const first = route.split(/[/?#]/)[1] || ''
+    // обходы вида «..», «//» и обратные слэши — не наши ссылки
+    if (!DEEP_LINK_SECTIONS.has(first) || /\.\.|\/\/|\\/.test(route)) return '/'
+    return route
   } catch {
     return null
   }
@@ -1615,6 +1626,14 @@ async function installGameImpl(gameId, opts = {}) {
       const root = findGameRootFromExe(exePath)
       if (root && hoistGameRoot(dest, root)) exePath = rankGameExecutable(dest, baseName)
     }
+    // Распакованная игра намного меньше скачанного — значит, распаковали не то (например, кряк
+    // рядом с готовой игрой). Скачанные файлы тогда не удаляем: их можно установить заново.
+    let keepDownload = false
+    if (kind === 'archive') {
+      const [installedBytes, downloadedBytes] = await Promise.all([pathSize(dest), pathSize(contentPath)])
+      keepDownload = downloadedBytes > 0 && installedBytes < downloadedBytes * 0.5
+      if (keepDownload) console.warn(`[Install] распаковано ${installedBytes} из ${downloadedBytes} байт — загрузку не удаляю`)
+    }
     const entry = {
       id: gameId,
       catalogId,
@@ -1626,13 +1645,14 @@ async function installGameImpl(gameId, opts = {}) {
       kind,
       installedAt: Date.now(),
       playtimeMs: 0,
+      ...(keepDownload ? { sourcePath: contentPath } : {}),
     }
     registerGame(entry)
     // catalogId — id игры в каталоге (для статистики установок), gameId — id скачивания
     sendInstallProgress({ gameId, catalogId, phase: 'done', percent: 100 })
     // Убираем торрент/запись загрузки и временные файлы
-    await dropDownload(gameId, contentPath)
-    return entry
+    if (!keepDownload) await dropDownload(gameId, contentPath)
+    return { ...entry, keptDownload: keepDownload }
   }
 
   // Тихая установка: известный тип установщика ставим без мастера прямо в папку игр лаунчера,
@@ -1829,7 +1849,10 @@ async function installGameImpl(gameId, opts = {}) {
       }
     }
     const entry = await finalizeInstall(dest, 'archive')
-    return { ok: true, kind: 'archive', installPath: dest, exePath: entry.exePath }
+    return {
+      ok: true, kind: 'archive', installPath: dest, exePath: entry.exePath,
+      ...(entry.keptDownload ? { message: `Распакованная игра намного меньше скачанных файлов — возможно, установка неполная. Скачанные файлы сохранены: ${contentPath}` } : {}),
+    }
   }
 
   // Готовая папка с игрой (или одиночный файл-торрент) — в папку установленных игр
@@ -1913,8 +1936,23 @@ ipcMain.handle('notify-show', (e, opts) => {
 
 ipcMain.handle('installed-games', () => loadRegistry())
 ipcMain.handle('launch-game', async (e, id) => {
-  const entry = loadRegistry().find(g => g.id === id)
+  let entry = loadRegistry().find(g => g.id === id)
   if (entry?.installPath) await unblockFolder(entry.installPath)
+  // Файл запуска пропал (чаще всего — антивирус убрал в карантин лаунчер сетевого фикса):
+  // ищем exe игры заново, чтобы кнопка «Играть» не ломалась навсегда
+  // Записан не exe игры, а утилита или установщик (старые версии ставили репак FitGirl как готовую
+  // игру с файлом запуска MD5/QuickSFV.EXE) — тоже ищем заново
+  const badExe = !entry?.exePath || !fs.existsSync(entry.exePath) || !installerModule.isGameExe(entry.exePath)
+  if (entry?.installPath && badExe && fs.existsSync(entry.installPath)) {
+    const found = rankGameExecutable(entry.installPath, entry.name)
+    if (found) {
+      console.warn('[Launch] файл запуска не подходит, выбран заново:', entry.exePath, '→', found)
+      entry = { ...entry, exePath: found }
+      registerGame(entry)
+    } else if (entry.exePath && fs.existsSync(entry.exePath)) {
+      return { error: 'Игра установлена не до конца: в её папке нет файла игры, только установочные файлы. Удалите игру и установите заново.' }
+    }
+  }
   const res = await launchInstalledGame(entry)
   if (res?.ok && entry) {
     registerGame({ ...entry, lastPlayedAt: Date.now() })
@@ -1931,6 +1969,34 @@ ipcMain.handle('launch-game', async (e, id) => {
   return res
 })
 // ==========================================================
+
+// --- Облачные сохранения (логика «когда и что синхронизировать» — в рендерере, src/api/cloudSaves.ts) ---
+ipcMain.handle('cloud-saves-locate', (e, opts) => cloudSaves.locate(app, opts || {}))
+ipcMain.handle('cloud-saves-pack', async (e, args) => {
+  // args: путь папки (старый вызов) или { dirs, gameDir }
+  const { dirs, gameDir } = typeof args === 'string' ? { dirs: [args], gameDir: '' } : (args || {})
+  try { return { ok: true, ...(await cloudSaves.pack(app, getBundled7z(), dirs || [], gameDir || '')) } } catch (err) { return { error: err.message || String(err) } }
+})
+ipcMain.handle('cloud-saves-upload', async (e, { url, file, contentType }) => {
+  try { await cloudSaves.upload(url, file, contentType); return { ok: true } } catch (err) { return { error: err.message || String(err) } } finally { cloudSaves.removeTemp(file) }
+})
+ipcMain.handle('cloud-saves-remove-temp', (e, file) => { cloudSaves.removeTemp(file); return true })
+ipcMain.handle('cloud-saves-restore', async (e, { url, dir, dirs, label, gameDir }) => {
+  let file = ''
+  try {
+    file = await cloudSaves.download(app, url)
+    return { ok: true, ...(await cloudSaves.restore(app, getBundled7z(), file, dirs?.length ? dirs : [dir], label, gameDir || '')) }
+  } catch (err) {
+    return { error: err.message || String(err) }
+  } finally {
+    cloudSaves.removeTemp(file)
+  }
+})
+ipcMain.handle('cloud-saves-pick-dir', async () => {
+  const res = await dialog.showOpenDialog(mainWindow, { title: 'Папка сохранений игры', properties: ['openDirectory'] })
+  return res.canceled || !res.filePaths?.length ? null : res.filePaths[0]
+})
+ipcMain.handle('cloud-saves-open-dir', (e, dir) => (dir ? shell.openPath(dir) : null))
 
 // Диалог выбора exe игры (как «Расположение» в Hydra)
 ipcMain.handle('pick-exe', async () => {
@@ -2959,6 +3025,18 @@ function getDeviceInfo() {
 }
 
 ipcMain.handle('get-device-info', () => getDeviceInfo())
+// Состояние аппаратного ускорения: на слабой графике лаунчер предлагает упрощённый режим
+ipcMain.handle('gpu-status', async () => {
+  let feature = {}
+  try { feature = app.getGPUFeatureStatus() } catch { /* GPU-процесс ещё не готов */ }
+  let gpu = null
+  try {
+    const info = await app.getGPUInfo('basic')
+    const list = Array.isArray(info?.gpuDevice) ? info.gpuDevice : []
+    gpu = list.find((d) => d.active) || list[0] || null
+  } catch { /* нет данных о видеокарте */ }
+  return { feature, vendorId: gpu?.vendorId, deviceId: gpu?.deviceId, driver: gpu?.driverVersion }
+})
 
 // --- Окно «Кто играет?» (выбор аккаунта как в Steam) ---
 function openAccountPicker(hideMain = false) {

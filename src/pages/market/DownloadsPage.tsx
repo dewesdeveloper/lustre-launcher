@@ -5,6 +5,7 @@ import { useDialog } from '../../components/Dialogs';
 import type { Download, InstalledGame, InstallProgress } from './types';
 import DownloadsSection from './components/downloads/DownloadsSection';
 import PathPickerModal from './components/PathPickerModal';
+import ThreatInstallDialog from './components/ThreatInstallDialog';
 import { getAppPaths } from '../../utils/appPaths';
 import { formatSpeed } from './constants';
 
@@ -13,6 +14,8 @@ export default function DownloadsPage() {
   const dlg = useDialog();
   const electron = (window as any).electron;
   const [downloads, setDownloads] = useState<Download[]>([]);
+  // окно «Защитник нашёл угрозу»: установка — только после чекбокса и ввода слова «Установить»
+  const [threatPrompt, setThreatPrompt] = useState<{ name: string; threats: string[]; resolve: (go: boolean) => void } | null>(null);
   const [installed, setInstalled] = useState<InstalledGame[]>([]);
   const [installStates, setInstallStates] = useState<Record<string, { phase: string; percent: number; silent?: boolean; bytes?: number }>>({});
   const [installErrors, setInstallErrors] = useState<Record<string, string>>({});
@@ -86,12 +89,9 @@ export default function DownloadsPage() {
     let res = await electron?.installGame?.(id);
     // Защитник Windows нашёл угрозу — решает игрок (антивирусы ошибаются на репаках)
     if (res?.threat) {
-      const go = await dlg.confirm({
-        title: 'Защитник Windows нашёл угрозу',
-        message: `${(res.threats || []).join(', ') || 'Угроза'}. Файлы не удалены и не помещены в карантин. Устанавливать игру, только если вы доверяете источнику.`,
-        confirmText: 'Установить всё равно',
-        danger: true,
-      });
+      const name = downloads.find((d) => d.id === id)?.gameTitle || 'игра';
+      const go = await new Promise<boolean>((resolve) => setThreatPrompt({ name, threats: res.threats || [], resolve }));
+      setThreatPrompt(null);
       if (go) {
         setInstallStates(prev => ({ ...prev, [id]: { phase: 'install', percent: -1 } }));
         res = await electron?.installGame?.(id, { skipScan: true });
@@ -200,6 +200,14 @@ export default function DownloadsPage() {
           p?.run();
         }}
       />
+      {threatPrompt && (
+        <ThreatInstallDialog
+          gameName={threatPrompt.name}
+          threats={threatPrompt.threats}
+          onCancel={() => threatPrompt.resolve(false)}
+          onConfirm={() => threatPrompt.resolve(true)}
+        />
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import {
-  FileText, Gamepad2, Info, LifeBuoy, Library, LogOut, Plus, RefreshCcw, Scale, Settings, Shield,
+  FileText, Gamepad2, Info, LifeBuoy, Library, LogOut, Palette, Plus, RefreshCcw, Scale, Settings, Shield,
   ShieldAlert, ShieldCheck, Store, User, UserPlus, Users, WifiOff, X,
 } from 'lucide-react';
 import { hasAdmin } from '../../../admin';
@@ -31,6 +31,13 @@ export const TOP_LINKS: { label: string; hint: string; to: string }[] = [
   { label: 'Вид', hint: 'Темы, рамки, баннеры', to: '/appearance' },
   { label: 'Друзья', hint: 'Список и заявки', to: '/friends' },
   { label: 'Игры', hint: 'Магазин игр', to: '/store' },
+];
+
+/** Те же ссылки пунктами меню — для узкого окна, где они не помещаются в шапку */
+export const topLinksMenu = (go: Go): MenuItem[] => [
+  { label: 'Вид', icon: <Palette size={14} />, onClick: () => go('/appearance') },
+  { label: 'Друзья', icon: <Users size={14} />, onClick: () => go('/friends') },
+  { label: 'Игры', icon: <Gamepad2 size={14} />, onClick: () => go('/store') },
 ];
 
 const offlineSwitch = (o: OfflineMenuState): MenuItem => ({

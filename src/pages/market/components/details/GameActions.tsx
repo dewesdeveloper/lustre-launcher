@@ -11,6 +11,7 @@ import { getAppPaths } from '../../../../utils/appPaths';
 import { useDialog } from '../../../../components/Dialogs';
 import { useAuth } from '../../../../context/AuthContext';
 import { DOWNLOAD_WINDOWS_URL } from '../../../../utils/downloads';
+import { reportDownload } from '../../../../api/downloadStats';
 
 interface GameActionsProps {
   game: Game;
@@ -155,9 +156,11 @@ const GameActions: React.FC<GameActionsProps> = ({
         });
         return;
       }
+      // статистика скачиваний (раньше её отправляла только страница игры в библиотеке)
+      reportDownload(game.ID, 'started', source.kind || 'torrent');
       navigate('/downloads');
     } else if (kind !== 'torrent' && electron?.httpDownload) {
-      await electron.httpDownload({
+      const res = await electron.httpDownload({
         url: locator,
         kind,
         gameId: game.ID,
@@ -165,9 +168,11 @@ const GameActions: React.FC<GameActionsProps> = ({
         filename: downloadName,
         refreshFrom: itchPage.current,
       });
+      if (!res?.error) reportDownload(game.ID, 'started', source.kind || 'torrent');
       navigate('/downloads');
     } else {
       window.open(locator, '_blank');
+      reportDownload(game.ID, 'started', source.kind || 'torrent');
     }
   };
 

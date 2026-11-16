@@ -4,6 +4,7 @@ import {
 } from '@tabler/icons-react';
 import type { SupportTicket } from '../../../api/support';
 import { ticketStatusStyles, CATEGORY_LABEL, avatarOf } from '../ui';
+import { MessageContent } from './MessageContent';
 
 interface TicketChatProps {
   ticket: SupportTicket | null;
@@ -97,7 +98,7 @@ export const TicketChat = ({
                       ? 'bg-[rgb(var(--violet-rgb)/.07)] border-[rgba(131,56,236,.4)] text-pearl/80'
                       : 'bg-[rgb(var(--accent-rgb)/.03)] border-[var(--line-2)] text-pearl/80'
                   }`}>
-                    {m.content}
+                    <MessageContent text={m.content} />
                   </div>
                 </div>
               </div>

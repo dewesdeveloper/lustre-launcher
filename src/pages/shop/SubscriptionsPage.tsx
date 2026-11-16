@@ -1,130 +1,213 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion, useInView } from 'framer-motion';
 import {
-  IconChevronLeft, IconCheck, IconGift, IconLoader2, IconTag,
-  IconCrown, IconBolt, IconSparkles,
+  IconArrowRight, IconBolt, IconCalendarEvent, IconCheck, IconChevronLeft, IconCoin, IconCrown,
+  IconLoader2, IconMinus, IconPalette, IconSparkles, IconTag, IconUsersGroup,
 } from '@tabler/icons-react';
 import { useAuth } from '../../context/AuthContext';
 import { useDialog } from '../../components/Dialogs';
 import AvatarFrame from '../../components/AvatarFrame';
-import ProBadge from '../../components/ProBadge';
+import ProBadge, { PRO_NICK_CLASS } from '../../components/ProBadge';
 import {
-  getSubscription, cancelPro, redeemProPromo,
-  type SubscriptionStatus, type ProPlan, type ProPlanId,
+  getSubscription, cancelPro, redeemProPromo, getPublicPrices, guestStatus,
+  type SubscriptionStatus, type ProPlan, type ProPlanId, type ProBenefit, type CoinPackage,
 } from '../../api/subscriptions';
 import { createProPayment, openPaymentUrl, type PaymentOrderView } from '../../api/payments';
 import { PaymentModal } from '../../components/PaymentModal';
 import { Loading } from '../../components/Loading';
 import { currencyWord } from '../../utils/currency';
 import CurrencyIcon from '../../components/icons/CaratIcon';
-import { admin } from '../../admin';
+import { sellerLine, useSellerInfo } from '../../api/legal';
 
-const RUB = new Intl.NumberFormat('ru-RU');
-/** Число с разделителями разрядов: 12 500 */
-const nf = (n: number) => RUB.format(n);
-/** Дата словами: 05 марта 2027 (пусто, если даты нет) */
-function fmtDate(iso?: string | null) {
-  return iso ? new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' }) : '';
-}
+// Страница Lustre Pro: что даёт подписка (на примере профиля самого пользователя), статус
+// действующей подписки, тарифы, сравнение, промокод и ответы на вопросы. Все цифры — с сервера
+// (тарифы, преимущества, выплаты); таблица сравнения повторяет константы controllers/pro.go.
 
-// Акцент Pro — золотой
+const nf = (n: number) => new Intl.NumberFormat('ru-RU').format(n);
+const fmtDate = (iso?: string | null) =>
+  iso ? new Date(iso).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+
 const GOLD = '#fbbf24';
 
-/** Цена за день подписки — грубая оценка для маркетинговой плашки. */
-const perDay = (plan: ProPlan) => Math.max(1, Math.round(plan.price / Math.max(1, plan.months * 30)));
+/** Группы преимуществ: ключи из ProBenefits() на сервере */
+const GROUPS: { id: string; title: string; icon: ReactNode; keys: string[] }[] = [
+  { id: 'look', title: 'Внешний вид', icon: <IconPalette size={16} />, keys: ['identity', 'nick', 'cosmetics', 'banner', 'frame', 'custom_frame'] },
+  { id: 'more', title: 'Больше возможностей', icon: <IconUsersGroup size={16} />, keys: ['groups', 'showcase', 'favorites', 'collections', 'upload', 'chat_files', 'early', 'season', 'quest', 'support'] },
+  { id: 'coins', title: 'Плоды изгнания', icon: <IconCoin size={16} />, keys: ['bonus', 'gift', 'coins'] },
+];
 
-// Сравнение «без подписки vs Pro» — константы лимитов из controllers/pro.go
-const COMPARE_ROWS: { f: string; free: string; pro: string }[] = [
-  { f: 'Бейдж Pro и подсветка ника', free: '—', pro: 'Градиент фиолет → розовый' },
-  { f: 'Эксклюзивная косметика', free: 'Базовый каталог', pro: 'Темы, рамки, баннер Pro' },
-  { f: 'Ежедневный бонус', free: '+250 плодов', pro: '+500 плодов' },
-  { f: 'Ежемесячная выплата', free: '—', pro: '150–300 плодов' },
-  { f: 'Группы / участников', free: '5 / 10', pro: '30 / 50' },
-  { f: 'Витрины / избранное', free: '3 / 5', pro: '6 / 10' },
+// Без подписки / с Pro — константы лимитов из controllers/pro.go
+const COMPARE: { f: string; free: string | false; pro: string }[] = [
+  { f: 'Бейдж Pro и градиентный ник', free: false, pro: 'Да' },
+  { f: 'Эксклюзивные темы, рамки, баннер', free: false, pro: 'Да' },
+  { f: 'Ежедневный бонус', free: '+250', pro: '+500' },
+  { f: 'Ежемесячная выплата', free: false, pro: '150–300 плодов' },
+  { f: 'Лимит плодов изгнания', free: '100 000', pro: '1 000 000' },
+  { f: 'Группы / участников в группе', free: '5 / 10', pro: '30 / 50' },
+  { f: 'Витрины / игры в избранном', free: '3 / 5', pro: '6 / 10' },
   { f: 'Коллекции', free: '10', pro: '50' },
-  { f: 'Аватар и баннер (размер)', free: 'до 10 МБ', pro: 'до 25 МБ' },
-  { f: 'Видео в чате', free: 'до 50 МБ', pro: 'до 200 МБ' },
-  { f: 'Ранний доступ и приоритет', free: '—', pro: 'Новые темы и поддержка первыми' },
+  { f: 'Аватар и баннер', free: 'до 10 МБ', pro: 'до 25 МБ' },
+  { f: 'Видео / файлы в чате', free: '50 / 25 МБ', pro: '200 / 100 МБ' },
 ];
 
-// Витрина эксклюзивной косметики (предметы из магазина с ProOnly)
-const COSMOS = [
-  { cap: 'Рамка «Тернии»', rar: 'EPIC', cls: 'text-[#a78bfa]', bg: 'linear-gradient(135deg,#8338ec,#ff2d8f)' },
-  { cap: 'Рамка «Крылья»', rar: 'LEGENDARY', cls: 'text-amber-300', bg: 'linear-gradient(135deg,#ff2d8f,#ffb020)' },
-  { cap: 'Баннер Pro', rar: 'LEGENDARY', cls: 'text-amber-300', bg: 'linear-gradient(135deg,#22d3ee,#8338ec)' },
-  { cap: 'Тема «Deep Space»', rar: 'LEGENDARY', cls: 'text-amber-300', bg: 'linear-gradient(135deg,#0f0a17,#8338ec)' },
-  { cap: 'Тема «Phantom»', rar: 'EPIC', cls: 'text-[#a78bfa]', bg: 'linear-gradient(135deg,#120c1c,#ff2d8f)' },
+const FAQ: { q: string; a: string }[] = [
+  { q: 'Подписка продлевается автоматически?', a: 'Нет. Списаний без вашего участия не будет: продлить можно на этой же странице, новый срок прибавится к текущему.' },
+  { q: 'Как работает ежемесячная выплата?', a: 'Раз в 30 дней на счёт приходят плоды изгнания по тарифу: 300 на месячном, 150 на квартальном и годовом. Выплата начисляется, когда вы заходите в Lustre.' },
+  { q: 'Что будет после окончания подписки?', a: 'Бейдж, подсветка ника, рамка и баннер Pro отключатся, лимиты вернутся к обычным. Всё купленное в магазине останется в инвентаре.' },
+  { q: 'Как оплатить?', a: 'Банковской картой или через СБП в защищённом платёжном окне. Подписка включается сразу после оплаты.' },
+  { q: 'Игры станут доступнее?', a: 'Нет — все игры в Lustre и так бесплатны. Pro даёт оформление, повышенные лимиты и плоды изгнания.' },
 ];
 
-const FAQ_ITEMS: { q: string; a: string }[] = [
-  {
-    q: 'Продлевается ли подписка автоматически?',
-    a: 'Нет. Подписка не продлевается автоматически — ты сам решаешь, когда продлить. Доступ сохраняется до конца оплаченного срока.',
-  },
-  {
-    q: 'Что будет с косметикой после отмены?',
-    a: 'Премиум-рамка и баннер Pro деактивируются вместе с подпиской. Остальная косметика остаётся в инвентаре — вернуться можно в любой момент.',
-  },
-  {
-    q: 'Какие способы оплаты доступны?',
-    a: 'Банковские карты и СБП через защищённое платёжное окно. Оплата занимает меньше минуты, активация — мгновенная.',
-  },
-  {
-    q: 'Что такое плоды изгнания и зачем они?',
-    a: 'Это внутренняя валюта Lustre: за неё берут косметику в магазине. Pro каждый месяц возвращает её часть выплатой, а ежедневный бонус удваивается.',
-  },
-  {
-    q: 'Продление сложное?',
-    a: 'Один клик на этой же странице. Время продления суммируется к текущей подписке, ничего не сгорает.',
-  },
-];
-
-// --- Анимированный счётчик ---
-function CountUp({ to, prefix = '', suffix = '' }: { to: number; prefix?: string; suffix?: string }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const inView = useInView(ref, { once: true, amount: 0.6 });
-  const [val, setVal] = useState(0);
-
-  useEffect(() => {
-    if (!inView) return;
-    let raf = 0;
-    const start = performance.now();
-    const dur = 1400;
-    const tick = (t: number) => {
-      const p = Math.min(1, (t - start) / dur);
-      setVal(Math.round(to * (1 - Math.pow(1 - p, 3))));
-      if (p < 1) raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [inView, to]);
-
-  return <span ref={ref}>{prefix}{nf(val)}{suffix}</span>;
-}
-
-/** Блок, плавно появляющийся при прокрутке до него. */
-function Reveal({ children, className, delay = 0, style }: { children: React.ReactNode; className?: string; delay?: number; style?: React.CSSProperties }) {
+function SecHead({ children, hint }: { children: ReactNode; hint?: string }) {
   return (
-    <motion.div
-      className={className}
-      style={style}
-      initial={{ opacity: 0, y: 16 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, amount: 0.12 }}
-      transition={{ duration: 0.5, delay, ease: 'easeOut' }}
-    >
-      {children}
-    </motion.div>
+    <div className="tl-sec-head">
+      <span className="bar" />
+      <h2>{children}</h2>
+      {hint && <span className="tag">{hint}</span>}
+      <span className="line" />
+    </div>
   );
 }
 
-function SecTitle({ children }: { children: React.ReactNode }) {
+/** Как профиль пользователя выглядит с Pro: рамка, градиентный ник, бейдж, бонус */
+function ProPreview({ name, avatarUrl, frameId, active }: { name: string; avatarUrl?: string; frameId: string; active: boolean }) {
   return (
-    <h2 className="tl-head text-[11px] uppercase tracking-[0.2em] text-white mb-4 flex items-center gap-3" style={{ textShadow: 'var(--glow-sm)' }}>
-      {children}
-      <span className="flex-1 h-px" style={{ background: 'linear-gradient(90deg, var(--line-2), transparent)' }} />
-    </h2>
+    <div className="tl-panel relative overflow-hidden p-6" style={{ borderColor: `${GOLD}66` }}>
+      <span aria-hidden className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full blur-[90px]" style={{ background: 'rgba(251,191,36,.16)' }} />
+      <p className="tl-head relative text-[10px] font-bold uppercase tracking-[.24em]" style={{ color: GOLD }}>
+        {active ? 'Так вас видят сейчас' : 'Так вас увидят с Pro'}
+      </p>
+      <div className="relative mt-5 flex items-center gap-4">
+        <AvatarFrame avatarUrl={avatarUrl} frameId={frameId} size="medium" isPro />
+        <div className="min-w-0">
+          <p className={`truncate text-lg font-black ${PRO_NICK_CLASS}`}>{name}</p>
+          <div className="mt-1.5 flex items-center gap-2"><ProBadge size="md" /></div>
+        </div>
+      </div>
+      <div className="relative mt-5 space-y-2">
+        <div className="flex items-start gap-3 border border-[var(--line)] bg-black/25 px-3 py-2.5">
+          <span className={`tl-head shrink-0 text-[10px] font-bold ${PRO_NICK_CLASS}`}>{name}</span>
+          <span className="tl-term text-[14px] text-pearl/75">так выглядит ник в чате и комментариях</span>
+        </div>
+        <div className="flex items-center gap-3 border border-[var(--line)] bg-black/25 px-3 py-2.5">
+          <span style={{ color: GOLD }}><CurrencyIcon size={14} /></span>
+          <span className="tl-term text-[14px] text-pearl/75">Ежедневный бонус</span>
+          <span className="tl-num ml-auto text-[14px] text-white">+500</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Статус действующей подписки: сколько осталось, когда выплата, что включено */
+function ProStatus({ status, onExtend, onCancel }: { status: SubscriptionStatus; onExtend: () => void; onCancel: () => void }) {
+  const plan = status.plans.find((p) => p.id === status.pro_plan);
+  const totalDays = Math.max(status.days_left, (plan?.months || 1) * 30);
+  const pct = Math.max(4, Math.min(100, Math.round((status.days_left / totalDays) * 100)));
+  const ending = status.days_left <= 5;
+  return (
+    <section className="tl-panel mb-10 p-6">
+      <div className="flex flex-wrap items-center gap-3">
+        <IconCrown size={18} style={{ color: GOLD }} />
+        <h2 className="tl-head text-[12px] font-bold uppercase tracking-[.16em] text-white">Ваша подписка</h2>
+        {plan && <span className="tl-chip legendary">{plan.title}</span>}
+        <div className="ml-auto flex gap-2">
+          <button type="button" onClick={onExtend} className="tl-btn solid">Продлить</button>
+          <button type="button" onClick={onCancel} className="tl-btn ghost">Отключить</button>
+        </div>
+      </div>
+
+      <div className="mt-5">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="tl-term text-[16px] text-white">
+            Осталось <b className="tl-num text-[20px]" style={{ color: ending ? '#ff5b8a' : GOLD }}>{status.days_left}</b> дн.
+          </span>
+          <span className="tl-term text-[14px] text-[var(--muted)]">до {fmtDate(status.pro_until)}</span>
+        </div>
+        <div className="mt-2 h-2 overflow-hidden border border-[var(--line)] bg-black/30">
+          <div className="h-full" style={{ width: `${pct}%`, background: ending ? '#ff5b8a' : `linear-gradient(90deg, ${GOLD}, var(--pink))` }} />
+        </div>
+        {ending && <p className="tl-term mt-2 text-[14px] text-[#ff8fb0]">Подписка скоро закончится — продлите, и новый срок прибавится к текущему.</p>}
+      </div>
+
+      <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="tl-stat">
+          <div className="n">+{nf(status.gift_per_month)}</div>
+          <div className="l">выплата в месяц</div>
+        </div>
+        <div className="tl-stat">
+          <div className="n" style={{ fontSize: 18 }}>{status.gift_next_at ? fmtDate(status.gift_next_at) : '—'}</div>
+          <div className="l">следующая выплата</div>
+        </div>
+        <div className="tl-stat">
+          <div className="n">{status.gift_months_done}</div>
+          <div className="l">выплат получено</div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PlanCard({ plan, current, busy, onBuy }: { plan: ProPlan; current: boolean; busy: boolean; onBuy: () => void }) {
+  const hot = plan.highlight;
+  return (
+    <div
+      className={`tl-panel relative flex flex-col p-6 ${hot ? 'tl-hot' : ''}`}
+      style={hot ? { borderColor: 'var(--pink)', background: 'linear-gradient(180deg, rgb(var(--accent-rgb) / .12), transparent 55%)' } : undefined}
+    >
+      <div className="flex items-center gap-2">
+        <h3 className="tl-head text-[12px] font-bold uppercase tracking-[.14em] text-white">{plan.title}</h3>
+        {plan.badge && <span className={`tl-chip ${hot ? 'rare' : 'ok'} ml-auto`}>{plan.badge}</span>}
+        {current && !plan.badge && <span className="tl-chip legendary ml-auto">Ваш тариф</span>}
+      </div>
+
+      <div className="mt-5 flex flex-wrap items-end gap-2">
+        <span className="tl-num text-[34px] leading-none text-white">{nf(plan.price)} ₽</span>
+        {plan.old_price > plan.price && <span className="tl-num pb-1 text-[16px] text-[var(--muted)] line-through">{nf(plan.old_price)} ₽</span>}
+      </div>
+      <p className="tl-term mt-2 text-[15px] text-[var(--muted)]">
+        {plan.months > 1 ? `${nf(plan.per_month)} ₽ в месяц · ${plan.months} мес.` : 'на 1 месяц'}
+      </p>
+      {plan.save_pct > 0 && (
+        <p className="tl-head mt-2 text-[10px] font-bold uppercase tracking-[.14em]" style={{ color: 'var(--green2)' }}>
+          −{plan.save_pct}% · экономия {nf(plan.save_total)} ₽
+        </p>
+      )}
+
+      <div className="mt-5 flex items-center gap-3 border px-3.5 py-3" style={{ borderColor: 'rgba(251,191,36,.35)', background: 'rgba(251,191,36,.06)' }}>
+        <span style={{ color: GOLD }}><CurrencyIcon size={16} /></span>
+        <div className="min-w-0">
+          <p className="tl-term text-[15px] text-white">+{nf(plan.gift_per_month)} плодов каждый месяц</p>
+          {plan.months > 1 && <p className="tl-term text-[13px] text-[var(--muted-2)]">всего до {nf(plan.gift_total)} за срок</p>}
+        </div>
+      </div>
+
+      <button type="button" onClick={onBuy} disabled={busy} className={`tl-btn mt-6 h-11 w-full justify-center ${hot ? 'solid tl-shine' : ''} disabled:opacity-50`}>
+        {busy ? <IconLoader2 size={14} className="animate-spin" /> : current ? 'Продлить' : 'Оформить'}
+      </button>
+    </div>
+  );
+}
+
+function BenefitGroup({ title, icon, items }: { title: string; icon: ReactNode; items: ProBenefit[] }) {
+  if (!items.length) return null;
+  return (
+    <div className="tl-panel p-5">
+      <h3 className="tl-head mb-4 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[.16em] text-white">
+        <span className="text-accent">{icon}</span> {title}
+      </h3>
+      <ul className="space-y-3">
+        {items.map((b) => (
+          <li key={b.key} className="flex items-start gap-2.5">
+            <IconCheck size={14} className="mt-1 shrink-0" style={{ color: GOLD }} />
+            <span className="tl-term text-[15px] leading-snug">
+              <span className="text-white">{b.title}</span>
+              {b.hint && <span className="block text-[14px] text-[var(--muted)]">{b.hint}</span>}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -139,84 +222,58 @@ export default function SubscriptionsPage() {
   const [paying, setPaying] = useState<PaymentOrderView | null>(null);
   const [promo, setPromo] = useState('');
   const [promoBusy, setPromoBusy] = useState(false);
-
-  // Липкая кнопка: показываем после прокрутки мимо тарифов, прячем у финального CTA
-  const [sticky, setSticky] = useState(false);
+  const [openFaq, setOpenFaq] = useState<number | null>(0);
   const plansRef = useRef<HTMLDivElement>(null);
-  const finalRef = useRef<HTMLDivElement>(null);
+  const seller = useSellerInfo();
 
-  const load = () => getSubscription().then(setStatus).catch(() => setStatus(null));
+  // пакеты валюты и (для гостя) тарифы — из публичных цен: страница открыта без входа
+  const [packages, setPackages] = useState<CoinPackage[]>([]);
+  const load = async () => {
+    const pub = await getPublicPrices().catch(() => null);
+    if (pub) setPackages(pub.packages || []);
+    if (!user) { setStatus(pub ? guestStatus(pub) : null); return; }
+    await getSubscription().then(setStatus).catch(() => setStatus(pub ? guestStatus(pub) : null));
+  };
+  useEffect(() => { void load().finally(() => setLoading(false)); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [user?.id]);
 
-  useEffect(() => {
-    load().finally(() => setLoading(false));
-  }, []);
-
-  // бонус monthly: показываем тост сразу после начисления
+  // ежемесячная выплата начислилась при открытии страницы — сообщаем
   useEffect(() => {
     if (status?.gift_granted && status.gift_amount > 0) {
-      dialog.alert({
-        title: 'Ежемесячная выплата',
-        message: `Начислено +${nf(status.gift_amount)} ${currencyWord(status.gift_amount)}`,
-        tone: 'success',
-      });
+      dialog.alert({ title: 'Ежемесячная выплата', message: `Начислено +${nf(status.gift_amount)} ${currencyWord(status.gift_amount)}`, tone: 'success' });
       load();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status?.gift_granted]);
 
-  useEffect(() => {
-    const a = plansRef.current;
-    const b = finalRef.current;
-    if (!a || !b) return;
-    // страница скроллится внутри <main class="overflow-y-auto">, слушаем его (или window)
-    const scroller = a.closest('.overflow-y-auto') || window;
-    const onScroll = () => {
-      const pastPlans = a.getBoundingClientRect().bottom < 0;
-      const nearFinal = b.getBoundingClientRect().top < window.innerHeight * 0.85;
-      setSticky(pastPlans && !nearFinal);
-    };
-    scroller.addEventListener('scroll', onScroll, { passive: true });
-    onScroll();
-    return () => scroller.removeEventListener('scroll', onScroll);
-  }, [loading]);
+  const benefitsBy = useMemo(() => {
+    const list = status?.benefits || [];
+    return GROUPS.map((g) => ({ ...g, items: g.keys.map((k) => list.find((b) => b.key === k)).filter(Boolean) as ProBenefit[] }));
+  }, [status?.benefits]);
 
-  const isPro = !!status?.is_pro;
-  const isAdmin = user?.role === 'admin';
-  const plans = status?.plans || [];
-  const benefits = status?.benefits || [];
-  const limits = status?.limits;
-
-  const scrollToPlans = () => plansRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  const scrollToCompare = () => document.getElementById('compare')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const toPlans = () => plansRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   const handleBuy = async (plan: ProPlan) => {
+    if (!user) { navigate('/login'); return; }
     setBusy(plan.id);
     try {
       const order = await createProPayment(plan.id);
       setPaying(order);
       openPaymentUrl(order.payment_url);
     } catch (e: any) {
-      dialog.alert({
-        title: 'Ошибка оплаты',
-        message: e?.response?.data?.error || 'Не удалось создать платёж',
-        tone: 'info',
-      });
+      dialog.alert({ title: 'Ошибка оплаты', message: e?.response?.data?.error || 'Не удалось создать платёж', tone: 'info' });
     } finally {
       setBusy(null);
     }
   };
 
-  const handlePaymentPaid = async () => {
+  const handlePaid = async () => {
     setPaying(null);
-    try { await refreshUser(); } catch { /* ignore */ }
+    try { await refreshUser(); } catch { /* обновится при следующем входе */ }
     await load();
-    dialog.alert({
-      title: 'Подписка оформлена',
-      message: 'Lustre Pro активен. Ежемесячная выплата начисляется по тарифу.',
-      tone: 'success',
-    });
+    dialog.alert({ title: 'Подписка оформлена', message: 'Lustre Pro включён. Ежемесячная выплата будет приходить по тарифу.', tone: 'success' });
   };
 
-  const handlePaymentFailed = (order: PaymentOrderView) => {
+  const handleFailed = (order: PaymentOrderView) => {
     setPaying(null);
     dialog.alert({
       title: 'Оплата не завершена',
@@ -227,8 +284,8 @@ export default function SubscriptionsPage() {
 
   const handleCancel = async () => {
     const ok = await dialog.confirm({
-      title: 'Отключить подписку',
-      message: 'Все преимущества Lustre Pro перестанут действовать сразу. Продолжить?',
+      title: 'Отключить Lustre Pro?',
+      message: 'Бейдж, оформление и повышенные лимиты перестанут действовать сразу, оставшиеся дни не сохранятся.',
       confirmText: 'Отключить',
       danger: true,
     });
@@ -240,457 +297,217 @@ export default function SubscriptionsPage() {
 
   const handlePromo = async () => {
     if (!promo.trim()) return;
+    if (!user) { navigate('/login'); return; }
     setPromoBusy(true);
     try {
       const res = await redeemProPromo(promo.trim());
       updateProfile(res.profile);
-      dialog.alert({ title: 'Промокод активирован', message: `Подписка продлена на ${res.days} дней`, tone: 'success' });
+      dialog.alert({ title: 'Промокод активирован', message: `Подписка продлена на ${res.days} дн.`, tone: 'success' });
       setPromo('');
       load();
     } catch (e: any) {
-      dialog.alert({ title: 'Промокод не найден', message: e?.response?.data?.error || 'Проверьте код', tone: 'info' });
+      dialog.alert({ title: 'Промокод не подошёл', message: e?.response?.data?.error || 'Проверьте код', tone: 'info' });
     } finally {
       setPromoBusy(false);
     }
   };
 
-  if (loading) return <Loading label="Lustre Pro" />;
-  if (!status) return <Loading label="Lustre Pro" />;
+  if (loading || !status) return <Loading label="Lustre Pro" />;
 
-  const minPlan = plans.length ? plans.reduce((a, b) => (a.price <= b.price ? a : b)) : null;
+  const isPro = status.is_pro;
+  const plans = status.plans || [];
+  const minPlan = plans.length ? plans.reduce((a, b) => (a.per_month <= b.per_month ? a : b)) : null;
+  const name = user?.profile?.display_name || user?.username || 'Игрок';
 
   return (
-    <div className="min-h-screen bg-main-bg text-pearl pb-24 animate-in fade-in duration-500">
-      <div className="max-w-6xl mx-auto px-6 pt-8">
-        <button onClick={() => navigate(-1)} className="tl-btn ghost mb-6">
-          <IconChevronLeft size={14} /> Назад
-        </button>
+    <div className="min-h-screen bg-main-bg pb-24 text-left text-pearl animate-in fade-in duration-500">
+      <div className="mx-auto max-w-6xl px-6 pt-8">
+        <button type="button" onClick={() => navigate(-1)} className="tl-btn ghost mb-6"><IconChevronLeft size={14} /> Назад</button>
 
-        {/* ШАПКА */}
-        <div className="flex items-end gap-4 flex-wrap mb-8">
-          <div>
-            <h1 className="tl-pixel text-[22px] text-white" style={{ textShadow: 'var(--glow)' }}>
-              ПОДПИСКА
-            </h1>
-            <p className="tl-term text-[15px] tl-muted mt-3">
-              Lustre Pro: статус, косметика, лимиты и выплаты.
-            </p>
-          </div>
-        </div>
-
-        {/* HERO */}
-        <Reveal className="tl-panel relative overflow-hidden p-7 md:p-9 mb-6">
-          <span className="tl-sweep-bg absolute inset-0 pointer-events-none" aria-hidden />
-          <span
-            className="inline-flex items-center gap-2 px-3 py-1.5 tl-head text-[10px] uppercase tracking-[0.28em]"
-            style={{ color: 'var(--pink)', border: '1px solid var(--line-2)', background: 'rgb(var(--accent-rgb) / .1)' }}
-          >
-            <span className="tl-live-dot" /> LUSTRE PRO · Статус выше
-          </span>
-          <h2 className="tl-pixel text-[26px] md:text-[34px] text-white mt-4 leading-tight" style={{ textShadow: 'var(--glow)' }}>
-            {isPro ? (
-              <>ПРОДЛИ СВОЙ <span className="tl-grad-text">PREMIUM</span></>
-            ) : (
-              <>ТВОЙ ПРОФИЛЬ. <br /><span className="tl-grad-text">ТВОИ ПРАВИЛА.</span></>
-            )}
-          </h2>
-          <p className="tl-term text-[16px] tl-muted mt-3 max-w-2xl leading-relaxed">
-            {isPro
-              ? 'Время продления добавится к текущей подписке. Premium продолжает работать без перерыва.'
-              : 'Эксклюзивные рамки, темы и баннеры, подсветка ника, двойной ежедневный бонус и ежемесячная выплата плодов изгнания. Все игры и так бесплатны — Pro покупает статус и комфорт.'}
-          </p>
-          <div className="flex gap-3 flex-wrap items-center mt-6">
-            <button onClick={scrollToPlans} className="tl-btn solid tl-shine px-6 h-12">
-              {isPro ? 'ПРОДЛИТЬ' : `ОФОРМИТЬ ОТ ${minPlan ? nf(minPlan.price) : 399} ₽`}
-            </button>
-            {!isPro && (
-              <button onClick={scrollToCompare} className="tl-btn ghost px-5 h-12">
-                СРАВНИТЬ ВОЗМОЖНОСТИ
-              </button>
-            )}
-            {isPro && status.days_left > 0 && (
-              <span className="tl-head text-[10px] uppercase tracking-[0.16px] px-4 h-12 inline-flex items-center gap-2 border" style={{ borderColor: `${GOLD}66`, color: GOLD }}>
-                <IconCrown size={14} /> Активна ещё {status.days_left} дн.
-              </span>
-            )}
-          </div>
-          <div className="flex gap-2.5 flex-wrap mt-5">
-            {[
-              { icon: <IconCrown size={12} />, t: 'Бейдж и подсветка ника' },
-              { icon: <CurrencyIcon size={12} />, t: 'Выплата 150–300 плодов/мес' },
-              { icon: <IconBolt size={12} />, t: 'Ранний доступ к контенту' },
-              { icon: <IconCheck size={12} />, t: 'Отмена в один клик' },
-            ].map((c, i) => (
-              <span key={i} className="inline-flex items-center gap-2 px-3 py-2 border tl-head text-[10px] uppercase tracking-[0.14em]" style={{ borderColor: 'var(--line)', background: 'rgba(255,255,255,.03)', color: '#e2e2e2' }}>
-                <span style={{ color: 'var(--pink)' }}>{c.icon}</span> {c.t}
-              </span>
-            ))}
-          </div>
-        </Reveal>
-        {/* Статус подписки */}
-        {isPro && (
-          <Reveal className="tl-panel p-5 mb-6">
-            <div className="flex items-center gap-4 flex-wrap">
-              <AvatarFrame avatarUrl={status.avatar_frame_url || user?.profile?.avatar_url} frameId={status.frame_id} size="small" />
-              <div>
-                <p className="tl-head text-[10px] uppercase tracking-[0.18em] tl-muted">Подписка активна</p>
-                <p className="tl-head text-[10px] uppercase tracking-[0.12em] text-white mt-1 flex items-center gap-2">
-                  до {fmtDate(status.pro_until)} · {status.days_left} дн. <ProBadge />
-                </p>
+        {/* ВСТУПЛЕНИЕ */}
+        <section className="tl-panel relative mb-8 overflow-hidden p-8">
+          <div aria-hidden className="pointer-events-none absolute inset-0 opacity-70" style={{
+            backgroundImage: 'radial-gradient(560px 260px at 95% 0%, rgba(251,191,36,.14), transparent 70%), radial-gradient(520px 240px at 0% 100%, rgb(var(--accent-rgb)/.16), transparent 70%), linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px)',
+            backgroundSize: 'auto, auto, 28px 28px, 28px 28px',
+          }} />
+          <div className="relative grid grid-cols-1 items-center gap-8 lg:grid-cols-[1.25fr_1fr]">
+            <div>
+              <p className="tl-head mb-3 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[.3em]" style={{ color: GOLD }}>
+                <IconCrown size={13} /> Lustre Pro
+              </p>
+              <h1 className="tl-pixel text-[30px] leading-tight text-white" style={{ textShadow: 'var(--glow)' }}>
+                {isPro ? <>Pro <span className="tl-grad-text">активен</span></> : <>Выделяйтесь <span className="tl-grad-text">в Lustre</span></>}
+              </h1>
+              <p className="tl-term mt-3 max-w-xl text-[16px] leading-relaxed text-[var(--muted)]">
+                {isPro
+                  ? `Подписка действует до ${fmtDate(status.pro_until)}. Продление прибавится к текущему сроку.`
+                  : 'Бейдж и градиентный ник, эксклюзивные темы и рамки, вдвое больший ежедневный бонус, ежемесячная выплата плодов изгнания и повышенные лимиты. Игры в Lustre и так бесплатны — Pro про оформление и удобство.'}
+              </p>
+              <div className="mt-6 flex flex-wrap items-center gap-3">
+                <button type="button" onClick={toPlans} className="tl-btn solid tl-shine h-12 px-6">
+                  {isPro ? 'Продлить' : `Оформить от ${minPlan ? nf(minPlan.per_month) : 300} ₽/мес`} <IconArrowRight size={15} />
+                </button>
+                <button type="button" onClick={() => document.getElementById('compare')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} className="tl-btn ghost h-12 px-5">
+                  Сравнить с бесплатным
+                </button>
               </div>
-              <button onClick={handleCancel} className="tl-btn ghost ml-auto">Отключить Pro</button>
+              <div className="mt-6 flex flex-wrap gap-2">
+                {[
+                  { icon: <IconBolt size={12} />, t: 'включается сразу' },
+                  { icon: <IconCalendarEvent size={12} />, t: 'без автопродления' },
+                  { icon: <IconCheck size={12} />, t: 'отключение в один клик' },
+                ].map((c) => (
+                  <span key={c.t} className="tl-chip age inline-flex items-center gap-1.5"><span className="text-accent">{c.icon}</span>{c.t}</span>
+                ))}
+              </div>
             </div>
-          </Reveal>
-        )}
+            <ProPreview name={name} avatarUrl={user?.profile?.avatar_url} frameId={status.pro_frame_id || status.frame_id} active={isPro} />
+          </div>
+        </section>
+
+        {isPro && <ProStatus status={status} onExtend={toPlans} onCancel={handleCancel} />}
 
         {/* ТАРИФЫ */}
-        <div ref={plansRef} className="scroll-mt-6">
-          <SecTitle>Выбери тариф</SecTitle>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-10">
-            {plans.map((plan) => (
-              <PlanCard
-                key={plan.id}
-                plan={plan}
-                active={status.pro_plan === plan.id}
-                busy={busy === plan.id}
-                onBuy={() => handleBuy(plan)}
-              />
+        <section ref={plansRef} className="mb-12 scroll-mt-6">
+          <SecHead hint="цена за весь срок">{isPro ? 'Продлить подписку' : 'Тарифы'}</SecHead>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            {plans.map((p) => (
+              <PlanCard key={p.id} plan={p} current={isPro && status.pro_plan === p.id} busy={busy === p.id} onBuy={() => void handleBuy(p)} />
             ))}
           </div>
-        </div>
+          <p className="tl-term mt-4 text-center text-[14px] text-[var(--muted-2)]">
+            Оплата картой или через СБП. Подписка не продлевается сама — списаний без вашего участия не будет.
+          </p>
+          <p className="tl-term mt-1 text-center text-[13px] text-[var(--muted-2)]">
+            Оформляя подписку, вы принимаете{' '}
+            <button type="button" onClick={() => navigate('/subscriber-agreement')} className="text-accent hover:underline">соглашение подписчика</button>.
+            {seller && <> Продавец: {sellerLine(seller)}{seller.email ? `, ${seller.email}` : ''} · <button type="button" onClick={() => navigate('/legal')} className="text-accent hover:underline">реквизиты</button>.</>}
+          </p>
+        </section>
+
+        {/* ПАКЕТЫ ВАЛЮТЫ */}
+        {packages.length > 0 && (
+          <section className="mb-12">
+            <SecHead hint="разовая покупка">Пакеты <span style={{ color: GOLD }}>плодов изгнания</span></SecHead>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+              {packages.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => navigate(user ? '/shop/packages' : '/login')}
+                  className={`tl-panel tl-gcard flex flex-col items-center gap-1.5 p-4 text-center ${p.popular ? 'tl-hot' : ''}`}
+                  style={p.popular ? { borderColor: 'var(--pink)' } : undefined}
+                >
+                  <span className="tl-head text-[10px] font-bold uppercase tracking-[.14em] text-white">{p.title}</span>
+                  <span className="flex items-center gap-1.5 tl-num text-[18px] text-white">
+                    <span style={{ color: GOLD }}><CurrencyIcon size={14} /></span>{nf(p.coins)}
+                  </span>
+                  {p.bonus_pct > 0 ? <span className="tl-chip ok">+{p.bonus_pct}% бонус</span> : <span className="tl-chip age">базовый</span>}
+                  <span className="tl-num mt-1 text-[20px] text-white">{nf(p.price_rub)} ₽</span>
+                  <span className="tl-term text-[13px] text-[var(--muted-2)]">с Pro — {nf(p.price_pro)} ₽</span>
+                </button>
+              ))}
+            </div>
+            <p className="tl-term mt-3 text-center text-[14px] text-[var(--muted-2)]">
+              Плоды изгнания — внутренняя валюта Lustre для покупки оформления в магазине. Она не выводится и не обменивается на деньги.
+            </p>
+          </section>
+        )}
+
+        {/* ЧТО ВХОДИТ */}
+        <section className="mb-12">
+          <SecHead>Что входит в <span style={{ color: GOLD }}>Pro</span></SecHead>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            {benefitsBy.map((g) => <BenefitGroup key={g.id} title={g.title} icon={g.icon} items={g.items} />)}
+          </div>
+        </section>
 
         {/* СРАВНЕНИЕ */}
-        <div id="compare" className="scroll-mt-6">
-          <SecTitle>Без подписки vs Pro</SecTitle>
-          <Reveal className="tl-panel p-5 mb-10 overflow-x-auto">
-            <table className="w-full border-collapse text-[12px] min-w-[560px]">
+        <section id="compare" className="mb-12 scroll-mt-6">
+          <SecHead>Без подписки и с Pro</SecHead>
+          <div className="tl-panel overflow-x-auto">
+            <table className="w-full min-w-[560px] border-collapse">
               <thead>
-                <tr>
-                  <th className="tl-head text-[10px] uppercase tracking-[0.16em] tl-muted text-left border p-3" style={{ borderColor: 'var(--line)', background: 'rgb(var(--accent-rgb) / .05)' }}>Возможность</th>
-                  <th className="tl-head text-[10px] uppercase tracking-[0.16em] tl-muted text-left border p-3" style={{ borderColor: 'var(--line)', background: 'rgb(var(--accent-rgb) / .05)' }}>Без подписки</th>
-                  <th className="tl-head text-[10px] uppercase tracking-[0.16em] text-left border p-3" style={{ borderColor: 'var(--pink)', background: 'var(--pink)', color: '#0b0210' }}>Lustre Pro</th>
+                <tr className="tl-head text-[10px] font-bold uppercase tracking-[.16em]">
+                  <th className="border-b border-[var(--line)] px-5 py-3 text-left text-[var(--muted)]">Возможность</th>
+                  <th className="border-b border-[var(--line)] px-5 py-3 text-left text-[var(--muted)]">Без подписки</th>
+                  <th className="border-b px-5 py-3 text-left" style={{ color: GOLD, borderColor: `${GOLD}66`, background: 'rgba(251,191,36,.06)' }}>
+                    <span className="inline-flex items-center gap-1.5"><IconCrown size={12} /> Lustre Pro</span>
+                  </th>
                 </tr>
               </thead>
-              <tbody>
-                {COMPARE_ROWS.map((r) => (
-                  <tr key={r.f} className="hover:bg-white/[0.02] transition-colors">
-                    <td className="border p-3 text-pearl/85" style={{ borderColor: 'var(--line)' }}>{r.f}</td>
-                    <td className="border p-3 tl-muted" style={{ borderColor: 'var(--line)' }}>{r.free}</td>
-                    <td className="border p-3 text-white" style={{ borderColor: 'var(--line)', background: 'rgb(var(--accent-rgb) / .05)' }}>{r.pro}</td>
+              <tbody className="tl-term text-[15px]">
+                {COMPARE.map((r) => (
+                  <tr key={r.f} className="transition-colors hover:bg-white/[0.02]">
+                    <td className="border-b border-[var(--line)] px-5 py-3 text-pearl/85">{r.f}</td>
+                    <td className="border-b border-[var(--line)] px-5 py-3 text-[var(--muted)]">
+                      {r.free === false ? <IconMinus size={14} className="text-[var(--muted-2)]" /> : r.free}
+                    </td>
+                    <td className="border-b border-[var(--line)] px-5 py-3 text-white" style={{ background: 'rgba(251,191,36,.04)' }}>
+                      <span className="inline-flex items-center gap-1.5"><IconCheck size={13} style={{ color: GOLD }} /> {r.pro}</span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </Reveal>
-        </div>
-
-        {/* ВИТРИНА КОСМЕТИКИ */}
-        <SecTitle>Что открывается</SecTitle>
-        <Reveal className="tl-panel p-5 mb-10">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            {COSMOS.map((c) => (
-              <div key={c.cap} className="tl-lift border p-3 text-center" style={{ borderColor: 'var(--line)', background: 'var(--panel)' }}>
-                <div className="h-16 mb-3 border" style={{ borderColor: 'var(--line)', background: c.bg }} />
-                <p className="tl-head text-[10px] uppercase tracking-[0.1em] text-white">{c.cap}</p>
-                <p className={`tl-term text-[14px] mt-1 ${c.cls}`}>{c.rar}</p>
-              </div>
-            ))}
           </div>
-          <p className="tl-term text-[13px] tl-muted text-center mt-4">
-            Эксклюзивная косметика Pro <b className="text-white">не продаётся за плоды</b> — она выдаётся только с подпиской.
-          </p>
-        </Reveal>
+        </section>
 
-        {/* СЧИТАЕМ ВЫГОДУ */}
-        <SecTitle>Считаем выгоду</SecTitle>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-10">
-          <Reveal className="tl-panel stat px-4 py-5 text-center">
-            <div className="tl-num text-[24px] text-white"><CountUp to={500} prefix="+" /></div>
-            <div className="tl-head text-[10px] uppercase tracking-[0.14em] tl-muted mt-2">плодов в день вместо +250</div>
-          </Reveal>
-          <Reveal delay={0.08} className="tl-panel stat px-4 py-5 text-center">
-            <div className="tl-num text-[24px] text-white"><CountUp to={plans.find(p => p.id === 'year')?.gift_total ?? 1800} /></div>
-            <div className="tl-head text-[10px] uppercase tracking-[0.14em] tl-muted mt-2">плодов возвращается за год подписки</div>
-          </Reveal>
-          <Reveal delay={0.16} className="tl-panel stat px-4 py-5 text-center">
-            <div className="tl-num text-[24px] text-white"><CountUp to={minPlan ? perDay(minPlan) : 10} suffix=" ₽" /></div>
-            <div className="tl-head text-[10px] uppercase tracking-[0.14em] tl-muted mt-2">в день — столько стоит статус</div>
-          </Reveal>
-        </div>
-
-        {/* ПРЕИМУЩЕСТВА — акцентный блок подписки */}
-        <Reveal className="tl-panel relative overflow-hidden p-7 mb-8" style={{ borderColor: `${GOLD}73` }}>
-          <span className="absolute -top-24 -right-16 w-72 h-72 rounded-full blur-[110px] pointer-events-none" style={{ background: 'rgba(251,191,36,.14)' }} />
-          <span className="absolute -bottom-24 -left-16 w-72 h-72 rounded-full blur-[110px] pointer-events-none" style={{ background: 'rgb(var(--accent-rgb) / .12)' }} />
-          <div className="relative">
-            <span className="tl-head text-[10px] uppercase tracking-[0.3em]" style={{ color: GOLD }}>Акцент подписки</span>
-            <h2 className="tl-pixel text-[15px] text-white mt-3" style={{ textShadow: 'var(--glow)' }}>ЧТО ВХОДИТ В LUSTRE PRO</h2>
-            <ul className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
-              {benefits.map((b) => (
-                <li key={b.key} className="flex items-start gap-3">
-                  <IconCheck size={15} style={{ color: GOLD }} className="mt-0.5 shrink-0" />
-                  <span className="tl-term text-[15px] leading-snug">
-                    <span className="text-white">{b.title}</span>
-                    {b.hint ? <span className="tl-muted"> {b.hint}</span> : null}
-                    {b.pro_only && (
-                      <span className="ml-2 tl-head text-[10px] uppercase tracking-[0.14em] align-middle px-1.5 py-0.5" style={{ color: GOLD, border: `1px solid ${GOLD}66`, background: `${GOLD}1a` }}>
-                        только подписка
-                      </span>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            {limits && (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-7">
-                <LimitChip label="Групп" value={`${limits.groups}`} />
-                <LimitChip label="Участников" value={`${limits.group_members}`} />
-                <LimitChip label="Витрин" value={`${limits.showcases}`} />
-                <LimitChip label="Избранного" value={`${limits.favorites}`} />
-              </div>
-            )}
-          </div>
-        </Reveal>
-
-        {/* ОТЗЫВЫ */}
-        <SecTitle>Что говорят</SecTitle>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-10">
-          {[
-            { t: 'Оформил квартал ради рамки, а остался из-за выплат и лимитов — витрин теперь хватает на всю коллекцию.', n: '@void_runner', m: 'Pro 4 мес.' },
-            { t: 'Ник в ленте светится — сразу видно кто тут главный. Подсветка стоит своих копеек в день.', n: '@neon_fox', m: 'Pro 1 мес.' },
-            { t: 'Годовой взял: выплата каждый месяц копится, косметику за это время не догонишь покупками.', n: '@pixel_witch', m: 'Pro 7 мес.' },
-          ].map((q, i) => (
-            <Reveal key={q.n} delay={i * 0.08} className="tl-panel p-5 flex flex-col gap-3">
-              <p className="tl-term text-[15px] text-pearl/85 leading-relaxed">«{q.t}»</p>
-              <div className="flex items-center gap-3 mt-auto">
-                <span className="w-7 h-7 border shrink-0" style={{ borderColor: 'var(--line-2)', background: 'linear-gradient(135deg, var(--pink), var(--violet2))' }} />
-                <div>
-                  <div className="tl-head text-[10px] uppercase tracking-[0.1em]" style={{ color: 'var(--pink)' }}>{q.n}</div>
-                  <div className="tl-term text-[13px] tl-muted">{q.m}</div>
-                </div>
-              </div>
-            </Reveal>
-          ))}
-        </div>
-
-        {/* ПОДАРОК ДРУГУ */}
-        <Reveal className="tl-panel p-6 mb-4">
-          <div className="flex items-center gap-4 flex-wrap">
-            <span className="w-12 h-12 shrink-0 flex items-center justify-center border" style={{ borderColor: 'var(--line)', background: 'rgb(var(--accent-rgb) /.08)', color: 'var(--pink)' }}>
-              <IconGift size={24} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <h3 className="tl-head text-[11px] uppercase tracking-[0.14em] text-white">
-                Подарить <span style={{ color: 'var(--pink)' }}>Premium</span> другу
-              </h3>
-              <p className="tl-term text-[14px] tl-muted mt-1.5">
-                От {nf(399)} ₽. Мгновенная активация. Получи прогресс в бейдже «Меценат».
-              </p>
-            </div>
-            <button
-              onClick={() => dialog.alert({
-                title: 'Подарочные коды',
-                message: 'Промокоды выдаются в поддержке. Пока можно активировать промокод ниже.',
-                tone: 'info',
-              })}
-              className="tl-btn ghost shrink-0"
-            >
-              Подарить <IconChevronLeft size={13} className="rotate-180" />
-            </button>
-          </div>
-        </Reveal>
-
-        {/* ПРОМОКОД */}
-        <Reveal className="tl-panel p-6 mb-8">
-          <div className="flex items-center gap-4 flex-wrap">
-            <span className="w-12 h-12 shrink-0 flex items-center justify-center border" style={{ borderColor: 'var(--line)', background: 'rgb(var(--accent-rgb) /.08)', color: 'var(--pink)' }}>
-              <IconTag size={24} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <h3 className="tl-head text-[11px] uppercase tracking-[0.14em] text-white">Есть промокод?</h3>
-              <p className="tl-term text-[14px] tl-muted mt-1.5">Введи код и получи скидку прямо сейчас</p>
-              <p className="tl-term text-[13px] mt-1" style={{ color: 'var(--muted-2)' }}>
-                Подсказка: ищи промокоды в нашем Telegram-канале
-              </p>
-              <div className="flex gap-2 mt-3 flex-wrap">
-                <input
-                  value={promo}
-                  onChange={(e) => setPromo(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handlePromo(); }}
-                  placeholder="ВВЕДИТЕ ПРОМОКОД"
-                  className="tl-field flex-1 min-w-[220px] uppercase"
-                />
-                <button
-                  onClick={handlePromo}
-                  disabled={!promo.trim() || promoBusy}
-                  className="tl-btn disabled:opacity-50"
-                >
-                  {promoBusy ? <IconLoader2 size={13} className="animate-spin" /> : 'Применить'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </Reveal>
-
-        {/* FAQ */}
-        <SecTitle>Вопросы</SecTitle>
-        <div className="max-w-3xl mx-auto mb-10 flex flex-col gap-2.5">
-          {FAQ_ITEMS.map((item, i) => (
-            <Reveal key={item.q} delay={i * 0.05}>
-              <details className="group tl-panel">
-                <summary className="cursor-pointer list-none p-4 flex items-center gap-3 tl-head text-[10px] uppercase tracking-[0.1em] text-white">
-                  {item.q}
-                  <span className="ml-auto tl-num text-[18px] transition-transform duration-200 group-open:rotate-45" style={{ color: 'var(--pink)' }}>+</span>
-                </summary>
-                <p className="px-4 pb-4 tl-term text-[14px] tl-muted leading-relaxed">{item.a}</p>
-              </details>
-            </Reveal>
-          ))}
-        </div>
-
-        {/* ФИНАЛЬНЫЙ CTA */}
-        <div ref={finalRef}>
-          <Reveal className="tl-panel relative overflow-hidden p-8 text-center mb-6">
-            <span className="absolute inset-x-0 -bottom-24 h-48 pointer-events-none" style={{ background: 'radial-gradient(circle at 50% 100%, rgb(var(--accent-rgb) / .22), transparent 65%)' }} />
-            <h3 className="tl-pixel text-[20px] text-white relative" style={{ textShadow: 'var(--glow)' }}>
-              ХВАТИТ СМОТРЕТЬ. <span className="tl-grad-text">ПОРА ВЫДЕЛЯТЬСЯ.</span>
+        {/* ПРОМОКОД И ВОПРОСЫ */}
+        <section className="mb-10 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1.4fr]">
+          <div className="tl-panel h-fit p-6">
+            <h3 className="tl-head flex items-center gap-2 text-[11px] font-bold uppercase tracking-[.16em] text-white">
+              <IconTag size={15} className="text-accent" /> Промокод
             </h3>
-            <p className="tl-term text-[15px] tl-muted mt-3 mx-auto max-w-xl relative">
-              Оформи Lustre Pro и забери приветственный набор: рамка, баннер и двойной бонус уже ждут.
+            <p className="tl-term mt-2 text-[15px] text-[var(--muted)]">Промокод продлевает Pro на указанное в нём число дней. Ищите их в нашем Telegram-канале.</p>
+            <div className="mt-4 flex gap-2">
+              <input
+                value={promo}
+                onChange={(e) => setPromo(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') void handlePromo(); }}
+                placeholder="КОД"
+                className="tl-field min-w-0 flex-1 uppercase"
+              />
+              <button type="button" onClick={() => void handlePromo()} disabled={!promo.trim() || promoBusy} className="tl-btn solid shrink-0 disabled:opacity-50">
+                {promoBusy ? <IconLoader2 size={13} className="animate-spin" /> : 'Применить'}
+              </button>
+            </div>
+          </div>
+
+          <div className="tl-panel divide-y divide-[var(--line)]">
+            {FAQ.map((item, i) => {
+              const open = openFaq === i;
+              return (
+                <div key={item.q}>
+                  <button type="button" onClick={() => setOpenFaq(open ? null : i)} aria-expanded={open}
+                    className="tl-head flex w-full items-center gap-3 px-5 py-4 text-left text-[11px] font-bold uppercase tracking-[.1em] text-white hover:text-accent">
+                    {item.q}
+                    <span className="tl-num ml-auto text-[18px] text-accent transition-transform duration-200" style={{ transform: open ? 'rotate(45deg)' : 'none' }}>+</span>
+                  </button>
+                  {open && <p className="tl-term px-5 pb-4 text-[15px] leading-relaxed text-[var(--muted)]">{item.a}</p>}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        {!isPro && (
+          <section className="tl-panel relative mb-6 overflow-hidden p-8 text-center">
+            <span aria-hidden className="pointer-events-none absolute inset-x-0 -bottom-24 h-48" style={{ background: 'radial-gradient(circle at 50% 100%, rgb(var(--accent-rgb) / .22), transparent 65%)' }} />
+            <p className="tl-pixel relative text-[20px] text-white" style={{ textShadow: 'var(--glow)' }}>
+              Попробуйте <span className="tl-grad-text">Pro</span>
             </p>
-            <button onClick={scrollToPlans} className="tl-btn solid tl-shine px-8 h-12 mt-5 relative">
-              <IconSparkles size={15} /> ОФОРМИТЬ LUSTRE PRO
+            <p className="tl-term relative mx-auto mt-3 max-w-xl text-[15px] text-[var(--muted)]">
+              Месяц — {plans.find((p) => p.id === 'month') ? nf(plans.find((p) => p.id === 'month')!.price) : 249} ₽: бейдж, оформление, +300 плодов изгнания в месяц и двойной ежедневный бонус.
+            </p>
+            <button type="button" onClick={toPlans} className="tl-btn solid tl-shine relative mt-5 h-12 px-8">
+              <IconSparkles size={15} /> Выбрать тариф
             </button>
-          </Reveal>
-        </div>
-
-        <p className="tl-term text-[13px] text-center mb-5" style={{ color: 'var(--muted-2)' }}>
-          Подписка не продлевается автоматически. Вы можете отменить её в любой момент.
-        </p>
-
-        {isAdmin && admin && <admin.ProGrantPanel onGranted={load} />}
-
-        {paying && (
-          <PaymentModal
-            order={paying}
-            onPaid={handlePaymentPaid}
-            onFailed={handlePaymentFailed}
-            onClose={() => setPaying(null)}
-          />
+          </section>
         )}
+
+        {paying && <PaymentModal order={paying} onPaid={handlePaid} onFailed={handleFailed} onClose={() => setPaying(null)} />}
       </div>
-
-      {/* Липкая кнопка (приподнята над BottomBar h-16 в Electron) */}
-      <div
-        className="fixed left-1/2 bottom-20 z-40 flex items-center gap-4 px-5 py-3 border transition-transform duration-300"
-        style={{
-          background: 'rgb(13 7 20 / 0.94)',
-          borderColor: 'var(--pink)',
-          boxShadow: '0 0 26px rgb(var(--accent-rgb) / 0.3)',
-          transform: sticky ? 'translate(-50%, 0)' : 'translate(-50%, 200%)',
-        }}
-      >
-        <div>
-          <span className="tl-head text-[10px] uppercase tracking-[0.14em] text-white">LUSTRE PRO</span>
-          <span className="tl-num text-[18px] ml-2" style={{ color: 'var(--pink)' }}>от {minPlan ? nf(minPlan.price) : 399} ₽</span>
-          <span className="tl-term text-[14px] ml-2 tl-muted">· отмена в один клик</span>
-        </div>
-        <button onClick={scrollToPlans} className="tl-btn solid tl-shine">Оформить</button>
-      </div>
-    </div>
-  );
-}
-// --- карточка тарифа ---
-function PlanCard({ plan, active, busy, onBuy }: { plan: ProPlan; active: boolean; busy: boolean; onBuy: () => void }) {
-  const hot = plan.highlight;
-  return (
-    <div
-      className={`relative tl-panel tl-lift p-6 flex flex-col ${hot ? 'tl-hot' : ''}`}
-      style={hot ? { borderColor: 'var(--pink)', background: 'linear-gradient(180deg, rgb(var(--accent-rgb) / .12), transparent 60%)' } : undefined}
-    >
-      {plan.badge && (
-        <span
-          className={`absolute -top-px left-6 px-2 py-1 tl-head text-[10px] uppercase tracking-[0.16em] ${hot ? 'tl-badge-pulse' : ''}`}
-          style={hot
-            ? { background: 'var(--pink)', color: '#0b0210' }
-            : { background: 'rgb(var(--accent-rgb) /.16)', color: 'var(--pink)', border: '1px solid var(--line-2)' }}
-        >
-          {plan.badge}
-        </span>
-      )}
-
-      <h3 className={`tl-head text-[12px] uppercase tracking-[0.14em] text-white ${plan.badge ? 'mt-6' : ''}`}>{plan.title}</h3>
-
-      <div className="flex items-end gap-2 mt-4 flex-wrap">
-        <span className="tl-num text-[32px] text-white leading-none">{nf(plan.price)} ₽</span>
-        {plan.old_price > plan.price && (
-          <span className="tl-num text-[16px] tl-muted line-through pb-1">{nf(plan.old_price)} ₽</span>
-        )}
-      </div>
-
-      <div className="tl-term text-[14px] tl-muted mt-2">
-        {nf(plan.per_month)} ₽ / мес{plan.months > 1 ? ` · ${plan.months} мес` : ' · без обязательств'}
-      </div>
-
-      <span
-        className="inline-flex items-center gap-1.5 mt-2.5 w-fit px-2.5 py-1 tl-head text-[10px] uppercase tracking-[0.12em]"
-        style={{ color: 'var(--cyan2)', border: '1px solid rgb(var(--cyan-rgb) / .35)', background: 'rgb(var(--cyan-rgb) / .08)' }}
-      >
-        ≈ {perDay(plan)} ₽ в день
-      </span>
-
-      {plan.save_pct > 0 && (
-        <p className="tl-head text-[10px] uppercase tracking-[0.14em] mt-2.5" style={{ color: 'var(--green2)' }}>
-          Выгода {plan.save_pct}% · экономия {nf(plan.save_total)} ₽
-        </p>
-      )}
-
-      {/* Выплата */}
-      <div className="mt-4 p-3.5 border flex flex-col gap-1.5" style={{ borderColor: 'rgba(251,191,36,.35)', background: 'rgba(251,191,36,.07)' }}>
-        <p className="flex items-center gap-2 tl-term text-[15px]">
-          <span style={{ color: GOLD }}><CurrencyIcon size={15} /></span>
-          <span className="text-white">+{nf(plan.gift_per_month)}</span>
-          <span className="tl-muted text-[13px]">плодов изгнания каждый месяц</span>
-        </p>
-        {plan.months > 1 && (
-          <p className="tl-term text-[13px]" style={{ color: 'var(--muted-2)' }}>
-            до {nf(plan.gift_total)} плодов за {plan.months} мес — если забирать каждый месяц
-          </p>
-        )}
-      </div>
-
-      <ul className="mt-4 flex flex-col gap-2">
-        {(planFeatures(plan.id)).map((f) => (
-          <li key={f} className="flex gap-2 items-start tl-term text-[14px] tl-muted">
-            <IconCheck size={13} style={{ color: 'var(--pink)' }} className="mt-1 shrink-0" />
-            <span>{f}</span>
-          </li>
-        ))}
-      </ul>
-
-      <button
-        onClick={onBuy}
-        disabled={busy}
-        className={`mt-5 w-full h-11 tl-btn ${hot ? 'solid tl-shine' : ''} disabled:opacity-50`}
-      >
-        {busy ? <IconLoader2 size={14} className="animate-spin" /> : active ? 'Продлить' : 'Оформить'}
-      </button>
-    </div>
-  );
-}
-
-/** Ключевые фичи тарифа — короткий маркетинговый список на карточке. */
-function planFeatures(id: ProPlanId): string[] {
-  if (id === 'year') return ['Всё из квартального тарифа', 'Бейдж «Меценат»', 'Максимальная выгода 25%'];
-  if (id === 'quarter') return ['Всё из месячного тарифа', 'Баннер Pro в подписке', 'Приоритетная поддержка'];
-  return ['Бейдж Pro и подсветка ника', 'Эксклюзивные темы и рамки', 'Двойной ежедневный бонус'];
-}
-
-function LimitChip({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="tl-panel px-4 py-3 text-center">
-      <p className="tl-num text-[20px] text-white leading-none" style={{ fontVariantNumeric: 'tabular-nums' }}>{value}</p>
-      <p className="tl-head text-[10px] uppercase tracking-[0.16em] tl-muted mt-2">{label}</p>
     </div>
   );
 }

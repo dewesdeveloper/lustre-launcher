@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { IconBrandGithub, IconBrandSteam } from '@tabler/icons-react';
+import { IconBrandGithub, IconBrandGoogle, IconBrandSteam, IconBrandTelegram } from '@tabler/icons-react';
 import { getOAuthProviders, getOAuthStartUrl, getOAuthResult, type OAuthResultData } from '../../../api/oauth';
 import { saveDeviceToken } from '../../../api/deviceTokens';
 import { OrDivider } from './OrDivider';
@@ -23,6 +23,8 @@ export function SocialButton({ icon, children, onClick, disabled }: { icon: Reac
 const PROVIDER_META: Record<string, { label: string; icon: ReactNode }> = {
   github: { label: 'Войти с GitHub', icon: <IconBrandGithub /> },
   steam: { label: 'Войти с Steam', icon: <IconBrandSteam /> },
+  google: { label: 'Войти с Google', icon: <IconBrandGoogle /> },
+  telegram: { label: 'Войти через Telegram', icon: <IconBrandTelegram /> },
 };
 
 const REASON_TEXT: Record<string, string> = {

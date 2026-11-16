@@ -11,8 +11,6 @@ export interface AdminModule {
   AdminNavButton: FC<{ compact?: boolean }>;
   /** Удаление игры из каталога с подтверждением (true — удалена) */
   deleteGame: (id: number | string, dlg: ReturnType<typeof useDialog>) => Promise<boolean>;
-  /** Выдача/отзыв Pro и изменение баланса пользователя (на странице подписок) */
-  ProGrantPanel: FC<{ onGranted: () => void }>;
   /** Счётчик для колокольчика (персоналу: например, новые версии игр каталога) */
   useBellCount?: () => number;
   /** Раздел колокольчика для персонала; count — значение useBellCount */

@@ -169,6 +169,23 @@ let keepalive: ReturnType<typeof setInterval> | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let connecting = false;
 const handlers = new Set<ChatEventHandler>();
+
+// Переподключение: пауза растёт 3 → 6 → 12 … до 60 с со случайным разбросом, чтобы тысячи
+// клиентов после сбоя сервера не приходили одновременно. Раньше повтор шёл ровно раз в 3 с
+// бесконечно — при отказе сервера (лимит соединений) это давало тысячи запросов в час.
+// После disconnectChat() переподключения нет: само закрытие сокета вызывало onclose, и
+// закрытое окно через 3 с подключалось снова, занимая место в лимите соединений.
+let reconnectAttempt = 0;
+let stopped = false;
+let openedAt = 0;
+
+function scheduleReconnect() {
+  if (stopped) return;
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  const delay = Math.min(60_000, 3000 * 2 ** reconnectAttempt) + Math.random() * 1000;
+  reconnectAttempt = Math.min(reconnectAttempt + 1, 5);
+  reconnectTimer = setTimeout(connectChat, delay);
+}
 // Важные сигналы (звонки), отправленные без соединения: уходят сразу после переподключения
 const OUTBOX_TTL = 30_000;
 let outbox: { payload: Record<string, unknown>; at: number }[] = [];
@@ -185,6 +202,7 @@ function emit(data: any) {
 }
 
 export function connectChat() {
+  stopped = false;
   if (connecting || (ws && ws.readyState <= WebSocket.OPEN)) return;
   connecting = true;
 
@@ -194,6 +212,7 @@ export function connectChat() {
       ws = new WebSocket(`${WS_BASE}?ticket=${data.ticket}`);
 
       ws.onopen = () => {
+        openedAt = Date.now();
         const pending = outbox.filter((m) => Date.now() - m.at < OUTBOX_TTL);
         outbox = [];
         pending.forEach((m) => ws?.send(JSON.stringify(m.payload)));
@@ -213,20 +232,23 @@ export function connectChat() {
         ws = null;
         // внутреннее событие: звонок показывает «нет связи с сервером»
         emit({ type: '__close' });
-        if (reconnectTimer) clearTimeout(reconnectTimer);
-        reconnectTimer = setTimeout(connectChat, 3000);
+        // соединение жило дольше 10 с — это обычный обрыв, начинаем паузы сначала
+        if (openedAt && Date.now() - openedAt > 10_000) reconnectAttempt = 0;
+        openedAt = 0;
+        scheduleReconnect();
       };
 
       ws.onerror = () => ws?.close();
     })
     .catch(() => {
       connecting = false;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      reconnectTimer = setTimeout(connectChat, 5000);
+      scheduleReconnect();
     });
 }
 
 export function disconnectChat() {
+  stopped = true;
+  reconnectAttempt = 0;
   if (keepalive) clearInterval(keepalive);
   if (reconnectTimer) clearTimeout(reconnectTimer);
   ws?.close();

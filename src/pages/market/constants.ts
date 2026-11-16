@@ -10,6 +10,7 @@ export const modeLabels: Record<string, string> = {
 };
 
 export const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: 'relevance', label: 'По релевантности' },
   { value: 'title-asc', label: 'А → Я' },
   { value: 'title-desc', label: 'Я → А' },
   { value: 'date-new', label: 'Дата выхода (сначала новые)' },

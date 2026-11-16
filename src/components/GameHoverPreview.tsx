@@ -168,7 +168,7 @@ export function GameHoverPreview({ game, children, className = '' }: GameHoverPr
             onMouseEnter={clearHide}
             onMouseLeave={scheduleHide}
           >
-            <div className="w-[320px] overflow-hidden rounded-2xl border border-white/10 bg-[#0b0a0f]/95 backdrop-blur-xl shadow-[0_25px_60px_rgba(0,0,0,0.7)]">
+            <div className="w-[320px] overflow-hidden border border-[var(--line-2)] bg-[#0b0a0f]/95 backdrop-blur-xl shadow-[0_25px_60px_rgba(0,0,0,0.7)]">
               <div className="px-4 pt-3.5 pb-3">
                 <p className="text-[13px] font-black uppercase tracking-wide text-white truncate">
                   {game?.title || 'Без названия'}
@@ -221,7 +221,7 @@ export function GameHoverPreview({ game, children, className = '' }: GameHoverPr
                         onClick={() => go(slide - 1)}
                         disabled={slide === 0}
                         aria-label="Предыдущее медиа"
-                        className="absolute left-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/70 border border-white/15 text-white flex items-center justify-center hover:bg-black transition-colors disabled:opacity-25 disabled:cursor-not-allowed cursor-pointer"
+                        className="absolute left-2 top-1/2 -translate-y-1/2 w-7 h-7 bg-black/70 border border-[var(--line-2)] text-white flex items-center justify-center hover:bg-black transition-colors disabled:opacity-25 disabled:cursor-not-allowed cursor-pointer"
                       >
                         <ChevronLeft size={16} />
                       </button>
@@ -229,17 +229,17 @@ export function GameHoverPreview({ game, children, className = '' }: GameHoverPr
                         onClick={() => go(slide + 1)}
                         disabled={slide >= strip.length - 1}
                         aria-label="Следующее медиа"
-                        className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/70 border border-white/15 text-white flex items-center justify-center hover:bg-black transition-colors disabled:opacity-25 disabled:cursor-not-allowed cursor-pointer"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 bg-black/70 border border-[var(--line-2)] text-white flex items-center justify-center hover:bg-black transition-colors disabled:opacity-25 disabled:cursor-not-allowed cursor-pointer"
                       >
                         <ChevronRight size={16} />
                       </button>
-                      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-full bg-black/60 px-2 py-1">
+                      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-black/60 px-2 py-1">
                         {strip.map((_, i) => (
                           <button
                             key={i}
                             onClick={() => go(i)}
                             aria-label={`Медиа ${i + 1}`}
-                            className={`h-1.5 rounded-full transition-all cursor-pointer ${
+                            className={`h-1.5 transition-all cursor-pointer ${
                               i === slide ? 'w-4 bg-accent' : 'w-1.5 bg-white/40 hover:bg-white/80'
                             }`}
                           />

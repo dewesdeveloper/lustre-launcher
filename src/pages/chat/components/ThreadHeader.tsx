@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Minus, Square, X, MessageSquare, Phone, Video, Search, PanelRight, Pin, ChevronUp, ChevronDown, Loader2,
+  Minus, Square, X, MessageSquare, Phone, Video, Search, PanelRight, Pin, ChevronUp, ChevronDown, Loader2, Bell, BellOff,
 } from 'lucide-react';
+import { setChatMuted, useChatMuted } from '../../../api/chatMutes';
 import ProBadge from '../../../components/ProBadge';
 import type { ChatController } from '../useChatController';
 import { type Msg, fmtClock, fmtListTime, msgPreview, pluralRu } from '../model';
@@ -58,6 +59,7 @@ export function ThreadHeader({ ctl, searchOpen, infoOpen, onToggleSearch, onTogg
   const playing = item.peerId ? ctl.playing.get(item.peerId) : undefined;
   const members = ctl.thread?.members ?? [];
   const onlineCount = members.filter((m) => m.id === ctl.myId || ctl.onlineIds.has(m.id)).length;
+  const muted = useChatMuted(isGroup ? null : item.peerId);
 
   let status: React.ReactNode;
   if (typing) {
@@ -95,6 +97,15 @@ export function ThreadHeader({ ctl, searchOpen, infoOpen, onToggleSearch, onTogg
         <IconBtn title="Поиск по чату (Ctrl+F)" onClick={onToggleSearch} active={searchOpen}><Search size={15} /></IconBtn>
         <IconBtn title={isGroup ? 'Групповой звонок' : 'Аудиозвонок'} onClick={() => onCall(false)}><Phone size={15} /></IconBtn>
         {!isGroup && <IconBtn title="Видеозвонок" onClick={() => onCall(true)}><Video size={15} /></IconBtn>}
+        {!isGroup && item.peerId && (
+          <IconBtn
+            title={muted ? 'Включить звук сообщений' : 'Сообщения без звука'}
+            onClick={() => void setChatMuted(item.peerId!, !muted).catch(() => {})}
+            active={muted}
+          >
+            {muted ? <BellOff size={15} /> : <Bell size={15} />}
+          </IconBtn>
+        )}
         <IconBtn title={isGroup ? 'Информация о группе' : 'Профиль'} onClick={onToggleInfo} active={infoOpen}><PanelRight size={15} /></IconBtn>
       </div>
     </div>

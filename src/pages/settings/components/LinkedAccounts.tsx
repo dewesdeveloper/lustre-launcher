@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Check, ExternalLink, KeyRound, Link2, Mail, Phone } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Check, ExternalLink, KeyRound, Link2, Loader2, Mail, Phone } from 'lucide-react';
 import api from '../../../api';
+import { getOAuthLinkUrl, getOAuthResult } from '../../../api/oauth';
 import { useAuth } from '../../../context/AuthContext';
 import { Loading } from '../../../components/Loading';
 
@@ -134,6 +135,57 @@ function BindEmail({ current, onDone }: { current: string; onDone: () => void })
   );
 }
 
+const LINK_ERRORS: Record<string, string> = {
+  link_taken: 'Этот аккаунт сервиса уже привязан к другому пользователю Lustre.',
+  link_have: 'К вашему аккаунту уже привязан другой аккаунт этого сервиса.',
+  expired: 'Время ожидания истекло. Попробуйте ещё раз.',
+};
+
+/**
+ * Привязка сервиса: сервис открывается в браузере (на сайте — во всплывающем окне),
+ * а здесь ждём результат так же, как при входе через сервис.
+ */
+function useServiceLink(onLinked: () => void) {
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  const cancelled = useRef(false);
+  useEffect(() => () => { cancelled.current = true; }, []);
+
+  const link = async (provider: string) => {
+    if (busy) return;
+    setBusy(provider);
+    setError('');
+    const electron = (window as any).electron;
+    // на сайте окно открываем сразу в обработчике клика — иначе его заблокирует браузер
+    const popup = !electron ? window.open('about:blank', '_blank', 'width=560,height=700') : null;
+    try {
+      const { url, state, poll } = await getOAuthLinkUrl(provider);
+      if (electron?.openExternal) {
+        if (!(await electron.openExternal(url))) throw new Error('Не удалось открыть браузер');
+      } else if (popup && !popup.closed) {
+        popup.location.href = url;
+      } else {
+        throw new Error('Разрешите всплывающие окна для этого сайта');
+      }
+      const deadline = Date.now() + 5 * 60 * 1000;
+      while (!cancelled.current && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 1500));
+        let res;
+        try { res = await getOAuthResult(state, poll); } catch { continue; }
+        if (res.status === 'linked') { onLinked(); return; }
+        if (res.status === 'error') { setError(LINK_ERRORS[res.reason || ''] || 'Не удалось привязать сервис'); return; }
+      }
+      if (!cancelled.current) setError(LINK_ERRORS.expired);
+    } catch (e: any) {
+      if (popup && !popup.closed) popup.close();
+      setError(e?.response?.data?.error || e?.message || 'Не удалось привязать сервис');
+    } finally {
+      if (!cancelled.current) setBusy('');
+    }
+  };
+  return { link, busy, error };
+}
+
 function Status({ ok, children }: { ok: boolean; children: string }) {
   return <span className={`tl-chip ${ok ? 'ok' : 'warn'} inline-flex items-center gap-1`}>{ok && <Check size={11} />}{children}</span>;
 }
@@ -147,6 +199,8 @@ export default function LinkedAccounts() {
     api.get('/auth/linked-accounts').then((r) => { setData(r.data); setFailed(false); }).catch(() => setFailed(true));
   }, []);
   useEffect(load, [load]);
+
+  const serviceLink = useServiceLink(() => { load(); void refreshUser(); });
 
   if (failed) return null; // старый сервер без этого раздела
   if (!data) return <div className="tl-panel p-[22px]"><Loading /></div>;
@@ -217,7 +271,20 @@ export default function LinkedAccounts() {
                       {s.linked ? `Привязан${s.linked_at ? ` · ${date(s.linked_at)}` : ''}` : 'Не привязан'}
                     </p>
                   </div>
-                  {s.linked ? <Status ok>Вход доступен</Status> : <span className="tl-chip text-[var(--muted-2)] inline-flex items-center gap-1"><Link2 size={11} /> Нет</span>}
+                  {s.linked ? (
+                    <Status ok>Вход доступен</Status>
+                  ) : (
+                    <button
+                      type="button"
+                      className="tl-btn solid inline-flex items-center gap-1.5"
+                      disabled={!!serviceLink.busy}
+                      onClick={() => void serviceLink.link(s.provider)}
+                      title="Откроется браузер: войдите в сервис, и он привяжется к этому аккаунту"
+                    >
+                      {serviceLink.busy === s.provider ? <Loader2 size={13} className="animate-spin" /> : <Link2 size={13} />}
+                      {serviceLink.busy === s.provider ? 'Ждём браузер…' : 'Привязать'}
+                    </button>
+                  )}
                   {s.profile_url && (
                     <button type="button" className="tl-btn ghost inline-flex items-center gap-1.5" onClick={() => openLink(s.profile_url!)}>
                       <ExternalLink size={13} /> Профиль
@@ -228,6 +295,10 @@ export default function LinkedAccounts() {
             })}
           </div>
         )}
+        {serviceLink.busy && (
+          <p className="tl-term mt-3 text-[15px] text-[var(--muted)]">Войдите в сервис в открывшемся окне браузера и вернитесь сюда — привязка завершится сама.</p>
+        )}
+        {serviceLink.error && <p className="tl-term mt-3 text-[15px] text-[#ff5b8a]">{serviceLink.error}</p>}
       </div>
     </>
   );

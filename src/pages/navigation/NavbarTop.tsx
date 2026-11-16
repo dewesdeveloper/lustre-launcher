@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, Download, MessageCircle, PictureInPicture } from 'lucide-react';
+import { ChevronDown, Download, Menu as MenuIcon, MessageCircle, PictureInPicture } from 'lucide-react';
 import { ChatBell } from '../../components/ChatBell';
 import CurrencyPill from '../../components/CurrencyPill';
 import Tooltip from '../../components/Tooltip';
@@ -16,7 +16,7 @@ import { LogoMenu } from './components/LogoMenu';
 import { ProfileMenu } from './components/ProfileMenu';
 import { WindowControls } from './components/WindowControls';
 import { DropMenu } from './components/DropMenu';
-import { TOP_LINKS, helpMenu, logoMenu, profileMenu } from './components/menuItems';
+import { TOP_LINKS, helpMenu, logoMenu, profileMenu, topLinksMenu } from './components/menuItems';
 
 type Menu = 'logo' | 'help' | 'profile' | null;
 
@@ -30,6 +30,20 @@ const IS_WEB = !bridge;
 
 const ICON_BTN = 'w-8 h-7 flex items-center justify-center rounded transition-colors cursor-pointer';
 
+// Уже этой ширины ссылки шапки не помещаются рядом с валютой и профилем — сворачиваем их в меню
+const COMPACT_QUERY = '(max-width: 1100px)';
+
+function useCompactNav() {
+  const [compact, setCompact] = useState(() => typeof window !== 'undefined' && window.matchMedia(COMPACT_QUERY).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(COMPACT_QUERY);
+    const on = () => setCompact(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return compact;
+}
+
 /**
  * Верхняя полоса приложения: меню логотипа, ссылки и «Справка» (только лаунчер),
  * валюта, чаты, оверлей, меню профиля и кнопки окна. Гость видит вход и регистрацию.
@@ -40,6 +54,7 @@ export const NavbarTop = () => {
   const { manualOffline, setManualOffline } = useConnectivity();
   const [menu, setMenu] = useState<Menu>(null);
   const [overlay, setOverlay] = useState(false);
+  const compact = useCompactNav();
 
   const logoBox = useRef<HTMLDivElement>(null);
   const helpBox = useRef<HTMLDivElement>(null);
@@ -69,14 +84,14 @@ export const NavbarTop = () => {
 
   return (
     <div style={DRAG} className="fx-nav-line relative z-[100] flex h-11 w-full select-none items-center border-b border-[var(--line-2)] bg-[#08040d]">
-      <div style={NO_DRAG} className="flex h-full items-center gap-5 px-4">
+      <div style={NO_DRAG} className="flex h-full min-w-0 items-center gap-5 px-4 max-md:gap-3 max-md:px-2">
         <div ref={logoBox} className="relative">
           <LogoMenu isOpen={menu === 'logo'} onToggle={() => toggle('logo')} onClose={close} items={logoMenu(navigate, logout, offline, roles)} />
         </div>
 
         {!IS_WEB && (
           <nav className="flex h-full items-center gap-4">
-            {TOP_LINKS.map((l) => (
+            {!compact && TOP_LINKS.map((l) => (
               <Tooltip key={l.label} label={l.label} hint={l.hint}>
                 <button type="button" onClick={() => navigate(l.to)} className="tl-head flex h-full cursor-pointer items-center font-bold uppercase tracking-[0.15em] text-[var(--muted)] transition-colors hover:text-white">
                   {l.label}
@@ -84,23 +99,24 @@ export const NavbarTop = () => {
               </Tooltip>
             ))}
             <div ref={helpBox} className="relative flex h-full items-center">
-              <Tooltip label="Справка" hint="Поддержка и документы" align="left">
+              <Tooltip label={compact ? 'Меню' : 'Справка'} hint={compact ? 'Разделы, поддержка и документы' : 'Поддержка и документы'} align="left">
                 <button
                   type="button"
                   onClick={() => toggle('help')}
                   className={`tl-head flex h-full cursor-pointer items-center gap-1 font-bold uppercase tracking-[0.15em] transition-colors ${menu === 'help' ? 'text-white' : 'text-[var(--muted)] hover:text-white'}`}
                 >
-                  Справка
+                  {compact && <MenuIcon size={14} className="sm:hidden" />}
+                  <span className={compact ? 'max-sm:hidden' : ''}>{compact ? 'Меню' : 'Справка'}</span>
                   <ChevronDown size={10} className={`transition-transform duration-200 ${menu === 'help' ? 'rotate-180' : ''}`} />
                 </button>
               </Tooltip>
-              <DropMenu open={menu === 'help'} entries={helpMenu(navigate)} onClose={close} place="left-0 mt-1 w-72 z-[110]" />
+              <DropMenu open={menu === 'help'} entries={compact ? [...topLinksMenu(navigate), 'sep', ...helpMenu(navigate)] : helpMenu(navigate)} onClose={close} place="left-0 mt-1 w-72 z-[110]" />
             </div>
           </nav>
         )}
       </div>
 
-      <div style={NO_DRAG} className="ml-auto flex h-full items-center">
+      <div style={NO_DRAG} className="ml-auto flex h-full shrink-0 items-center">
         <OfflineBadge />
 
         {IS_WEB && (

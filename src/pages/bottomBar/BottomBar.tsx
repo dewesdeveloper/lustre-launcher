@@ -41,48 +41,52 @@ export default function BottomBar() {
   };
 
   return (
-    <footer className="relative h-16 bg-[#0b0512] border-t border-[var(--line-2)] flex items-center justify-between px-4 text-[11px] tl-term text-[var(--muted)] select-none overflow-hidden">
-      {/* Левая часть */}
-      <div className="flex items-center gap-4">
+    <footer className="relative h-16 bg-[#0b0512] border-t border-[var(--line-2)] flex items-center justify-between gap-4 px-4 text-[11px] tl-term text-[var(--muted)] select-none overflow-hidden whitespace-nowrap">
+      {/* Левая часть: в узком окне у служебных кнопок остаются только значки */}
+      <div className="flex min-w-0 items-center gap-4 max-xl:gap-3">
         {isStaff && (
           <>
             {isAdmin && (
               <button
                 onClick={() => navigate('/admin')}
+                title="Админ-панель"
                 className="flex items-center gap-1.5 hover:text-pearl transition-colors group cursor-pointer"
               >
                 <div className="p-0.5 border border-accent/40 rounded-sm group-hover:border-accent">
                   <IconShieldCheck size={15} stroke={3} />
                 </div>
-                <span className='text-[14px]'>Админ-панель</span>
+                <span className='text-[14px] max-xl:hidden'>Админ-панель</span>
               </button>
             )}
             <button
               onClick={() => navigate('/admin/games')}
+              title="Игры"
               className="flex items-center gap-1.5 hover:text-pearl transition-colors group cursor-pointer"
             >
               <div className="p-0.5 border border-violet/30 rounded-sm group-hover:border-pearl">
                 <IconList size={15} stroke={3} />
               </div>
-              <span className='text-[14px]'>Игры</span>
+              <span className='text-[14px] max-xl:hidden'>Игры</span>
             </button>
             <button
               onClick={() => navigate('/add-game')}
+              title="Добавить игру"
               className="flex items-center gap-1.5 hover:text-pearl transition-colors group cursor-pointer"
             >
               <div className="p-0.5 border border-violet/30 rounded-sm group-hover:border-pearl">
                 <IconPlus size={15} stroke={3} />
               </div>
-              <span className='text-[14px]'>Добавить игру</span>
+              <span className='text-[14px] max-xl:hidden'>Добавить игру</span>
             </button>
             <button
               onClick={() => navigate('/admin-shop')}
+              title="Управление магазином"
               className="flex items-center gap-1.5 hover:text-pearl transition-colors group cursor-pointer"
             >
               <div className="p-0.5 border border-violet/30 rounded-sm group-hover:border-pearl">
                 <IconPlus size={15} stroke={3} />
               </div>
-              <span className='text-[14px]'>Управление магазином</span>
+              <span className='text-[14px] max-xl:hidden'>Управление магазином</span>
             </button>
           </>
         )}

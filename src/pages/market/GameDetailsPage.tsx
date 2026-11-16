@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { landCoverFlight } from '../../utils/coverFlight';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useDialog } from '../../components/Dialogs';
+import { beforeLaunch } from '../../api/cloudSaves';
 import {
   ArrowLeft, Monitor, Shield, Building2, Disc, Info, ExternalLink
 } from 'lucide-react';
@@ -25,6 +27,7 @@ import { hasAdmin } from '../../admin';
 
 const GameDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const dialog = useDialog();
   const navigate = useNavigate();
   const { user } = useAuth();
   const role = (user as any)?.role;
@@ -112,6 +115,8 @@ const GameDetailsPage: React.FC = () => {
     if (!installed?.id || !electron?.launchGame) return;
     setLaunching(true);
     try {
+      // облачные сохранения: в облаке новее — предложить скачать перед игрой
+      await beforeLaunch(Number(id), installed.installPath, dialog.confirm);
       const res = await electron.launchGame(installed.id);
       if (res?.error) console.error('Launch failed:', res.error);
     } finally {

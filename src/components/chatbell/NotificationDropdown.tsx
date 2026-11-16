@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, Check, X, UserPlus, MessageSquare, MessageCircle, Gift } from 'lucide-react';
+import { Bell, Check, X, UserPlus, MessageSquare, MessageCircle, Gift, Mail } from 'lucide-react';
 import type { ChatConversation } from '../../api/chat';
 import CaratIcon from '../icons/CaratIcon';
 import { NotificationSection } from './NotificationSection';
@@ -33,6 +33,9 @@ interface NotificationDropdownProps {
   /** Есть что отмечать: заявки в друзья «прочитать» нельзя, на них нужно ответить */
   canMarkRead: boolean;
   bonusReady: boolean;
+  /** У аккаунта нет почты — напоминание привязать (не «читается», пока почту не привяжут) */
+  needEmail?: boolean;
+  onBindEmail?: () => void;
   onOpenCosmetics: () => void;
   requests: PendingRequest[];
   busyReq: number | null;
@@ -50,7 +53,7 @@ interface NotificationDropdownProps {
 }
 
 export const NotificationDropdown = ({
-  open, onClose, total, canMarkRead, bonusReady, onOpenCosmetics,
+  open, onClose, total, canMarkRead, bonusReady, needEmail, onBindEmail, onOpenCosmetics,
   requests, busyReq, onAcceptRequest, onDeclineRequest,
   unread, unreadConvs, onOpenChat, newComments, onOpenProfile,
   onMarkAllRead, extra,
@@ -95,8 +98,24 @@ export const NotificationDropdown = ({
         {extra}
 
         {/* Системные */}
-        {bonusReady && (
+        {(bonusReady || needEmail) && (
           <NotificationSection icon={<Gift size={12} />} title="Системные">
+            {needEmail && (
+              <NotificationRow
+                onClick={() => { onClose(); onBindEmail?.(); }}
+                className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/[0.04] transition-colors text-left cursor-pointer"
+              >
+                <div className="w-8 h-8 rounded-lg bg-amber-400/10 border border-amber-400/30 flex items-center justify-center shrink-0 text-amber-300">
+                  <Mail size={14} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] font-bold text-pearl truncate">Привяжите почту</p>
+                  <p className="text-[10px] text-pearl/60">Без неё не восстановить доступ к аккаунту</p>
+                </div>
+                <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+              </NotificationRow>
+            )}
+            {bonusReady && (
             <NotificationRow
               onClick={() => { onClose(); onOpenCosmetics(); }}
               className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-white/[0.04] transition-colors text-left cursor-pointer"
@@ -110,6 +129,7 @@ export const NotificationDropdown = ({
               </div>
               <span className="w-2 h-2 rounded-full bg-accent shrink-0 shadow-[0_0_6px_rgb(var(--accent-rgb)_/_0.8)]" />
             </NotificationRow>
+            )}
           </NotificationSection>
         )}
 

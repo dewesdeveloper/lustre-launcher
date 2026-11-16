@@ -62,8 +62,10 @@ function extractorsFor(isRar) {
 }
 
 const INSTALLER_NAME_RE = /^(setup|install|installer|autorun|redist)([ _\-.]?\d+)?\.(exe|msi|bat|cmd)$/i
-const EXE_EXCLUDE_RE = /unins|setup|install|redist|directx|dxsetup|dxweb|vcredist|dotnet|crash|handler|unrar|winrar|7-?zip|7za|readme|autoupdate|unity|unarc|inno/i
-const VOLUME_RE = /^(.*?)(\.part\d+\.rar|\.\d{3}|\.r\d{2})$/i
+// quicksfv/md5/sfv — утилиты проверки файлов репака (FitGirl кладёт MD5/QuickSFV.EXE рядом с setup.exe)
+const EXE_EXCLUDE_RE = /unins|setup|install|redist|directx|dxsetup|dxweb|vcredist|dotnet|crash|handler|unrar|winrar|7-?zip|7za|readme|autoupdate|unity|unarc|inno|quicksfv|sfv|md5|checksum|verify/i
+const AUX_LAUNCHER_RE = /multiplayer|online.?fix|freetp|steamfix|coop.?launcher/i
+const VOLUME_RE =/^(.*?)(\.part\d+\.rar|\.\d{3}|\.r\d{2})$/i
 // .iso — образ диска: 7-Zip распаковывает его как архив (ISO 9660 / UDF)
 const ARCHIVE_FILE_RE = /\.(zip|7z|rar|iso|\d{3}|r\d{2})$/i
 const ISO_FILE_RE = /\.iso$/i
@@ -198,12 +200,15 @@ function rankGameExecutable(folderPath, title) {
     const scored = pool.map(r => ({
       r,
       s: [
+        // запускалки сетевых фиксов (FreeTP, Online-Fix: «RimworldMultiplayerLauncher.exe») — после
+        // самой игры: их часто удаляет антивирус, а exe игры запускается и без них
+        AUX_LAUNCHER_RE.test(path.basename(r)) ? 1 : 0,
         -countUnsharedSiblings(r, rels, counts),
         toSegments(r).length,
         named.includes(r) ? 0 : 1,
       ],
     }))
-    scored.sort((a, b) => a.s[0] - b.s[0] || a.s[1] - b.s[1] || a.s[2] - b.s[2] || a.r.localeCompare(b.r))
+    scored.sort((a, b) => a.s[0] - b.s[0] || a.s[1] - b.s[1] || a.s[2] - b.s[2] || a.s[3] - b.s[3] || a.r.localeCompare(b.r))
     return path.join(folderPath, scored[0].r)
   } catch { return null }
 }
@@ -475,6 +480,24 @@ function detectInstall(contentPath) {
 
     let root = contentPath
 
+    // Готовая игра с небольшим архивом рядом («Crack [RUNE].rar», патч, саундтрек): архив — не игра.
+    // Раньше exe искался только на 3 уровня вглубь, а у Unreal он в «Игра/Проект/Binaries/Win64» —
+    // лаунчер принимал раздачу за архив, распаковывал 59-мегабайтный кряк как игру и удалял 17 ГБ.
+    const deep = walk(root, 0, { files: [], dirs: [] }, 6)
+    const deepArchive = largestArchive(deep.files)
+    if (deepArchive) {
+      const archiveSet = new Set(deepArchive.files.map((f) => f.path))
+      const looseSize = deep.files.reduce((s, f) => s + (archiveSet.has(f.path) || ARCHIVE_FILE_RE.test(f.name) ? 0 : f.size), 0)
+      const gameExe = rankGameExecutable(root, '')
+      if (gameExe && looseSize > deepArchive.total * 3) {
+        let entries = []
+        try { entries = fs.readdirSync(root, { withFileTypes: true }) } catch {}
+        const visible = entries.filter(e => e.name !== 'desktop.ini' && !e.name.startsWith('.'))
+        const gameFolder = visible.length === 1 && visible[0].isDirectory() ? path.join(root, visible[0].name) : root
+        return { kind: 'portable', root, gameFolder, exePath: gameExe }
+      }
+    }
+
     const tree = walk(root, 0, { files: [], dirs: [] }, 3)
 
     const exes = tree.files.filter(f =>
@@ -482,6 +505,15 @@ function detectInstall(contentPath) {
     )
     exes.sort((a, b) => (a.depth - b.depth) || (b.size - a.size))
     const exePath = exes[0]?.path || null
+
+    // Установщик в корне раздачи, а exe — только глубже (утилиты, папка «Redist» и т. п.):
+    // это репак, а не готовая игра. Иначе лаунчер «ставил» репак как портативную игру с чужим exe.
+    const rootInstaller = tree.files
+      .filter((f) => f.depth === 0 && (INSTALLER_NAME_RE.test(f.name) || /setup.*\.exe$/i.test(f.name) || /\.msi$/i.test(f.name)))
+      .sort((a, b) => b.size - a.size)[0]
+    if (rootInstaller && !exes.some((f) => f.depth === 0)) {
+      return { kind: 'installer', root, installerPath: rootInstaller.path }
+    }
 
     // В загрузке нет готового exe, но есть установщик (setup.exe, "Game-v2-setup.exe", .msi) —
     // запускаем его для ручной установки пользователем
@@ -832,6 +864,12 @@ function unblockFolder(target) {
   })
 }
 
+// Можно ли запускать файл как игру: не установщик и не утилита (QuickSFV, unins, redist…)
+function isGameExe(file) {
+  const base = path.basename(String(file || ''))
+  return /\.exe$/i.test(base) && !INSTALLER_NAME_RE.test(base) && !EXE_EXCLUDE_RE.test(base)
+}
+
 async function launchInstalledGame(entry, launchOptions) {
   if (!entry?.exePath || !fs.existsSync(entry.exePath)) {
     return { error: 'Исполняемый файл игры не найден' }
@@ -1042,6 +1080,7 @@ function createDesktopShortcut(name, targetPath) {
 }
 
 module.exports = {
+  isGameExe,
   extractorsFor,
   getBundled7z,
   detectInstall,

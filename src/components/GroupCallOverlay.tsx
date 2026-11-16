@@ -47,6 +47,7 @@ export default function GroupCallOverlay() {
   const startShare = async (source?: DesktopSource) => {
     if (source) setShareSource(source.id);
     setPickerOpen(false);
+    setQualityState(getQuality()); // качество могли сменить в окне выбора экрана
     if (st.sharingScreen) await restartScreenShare();
     else await toggleGroupScreenShare();
   };

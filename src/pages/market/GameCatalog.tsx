@@ -6,6 +6,7 @@ import api from '../../api';
 import { useSettings } from '../../context/SettingsContext';
 import { useAdultConsent } from '../../components/AdultGate/AdultGate';
 import type { SortKey } from './types';
+import { compileQuery, scoreGame } from '../../utils/gameSearch';
 import {
   containerVariantsFor, AGE_ORDER, CONTENT_TAG_MAP, releaseTime, titleCollator,
   STORE_VIEW_KEY, STORE_FROM_GAME_KEY, readSavedView, markLeavingToGame,
@@ -73,6 +74,7 @@ export const GameCatalog: React.FC = () => {
     if (q === null && tag === null) return;
     // переход из шапки — новый поиск: прежние фильтры сбрасываем
     setSearchQuery(q ?? '');
+    if (q?.trim()) setSortBy('relevance');
     setSelectedTags(tag ? [tag] : []);
     setSelectedRating('');
     setSelectedLang('');
@@ -267,7 +269,9 @@ export const GameCatalog: React.FC = () => {
     for (const [category, enabled] of Object.entries(contentFilters)) {
       if (enabled && CONTENT_TAG_MAP[category]) blockedTags.push(...CONTENT_TAG_MAP[category]);
     }
-    const q = searchQuery.trim().toLowerCase();
+    // умный поиск (опечатки, раскладка, транслит, порядок слов) — utils/gameSearch.ts
+    const compiled = searchQuery.trim() ? compileQuery(searchQuery.trim()) : null;
+    const scores = new Map<unknown, number>();
 
     const result = games.filter((game) => {
       // 0. Игры для взрослых (настройка магазина)
@@ -287,9 +291,10 @@ export const GameCatalog: React.FC = () => {
       }
 
       // 3. Пользовательские фильтры
-      if (q) {
-        const hay = `${game.title || ''}\n${game.developer || ''}\n${game.publisher || ''}`.toLowerCase();
-        if (!hay.includes(q)) return false;
+      if (compiled) {
+        const score = scoreGame(game, compiled);
+        if (score <= 0) return false;
+        scores.set(game, score);
       }
       if (selectedRating && game.age_rating !== selectedRating) return false;
       if (selectedTags.length > 0) {
@@ -322,6 +327,8 @@ export const GameCatalog: React.FC = () => {
         case 'date-old': return byDate(a, b, 1);
         case 'added-new': return (b.ID || 0) - (a.ID || 0);
         case 'added-old': return (a.ID || 0) - (b.ID || 0);
+        // без запроса «по релевантности» = сначала новые
+        case 'relevance': return ((scores.get(b) || 0) - (scores.get(a) || 0)) || (b.ID || 0) - (a.ID || 0);
         default: return 0;
       }
     });
@@ -452,7 +459,12 @@ export const GameCatalog: React.FC = () => {
 
         <CatalogToolbar
           searchQuery={searchQuery}
-          onChangeSearch={setSearchQuery}
+          onChangeSearch={(value) => {
+            // начали искать — сортируем по релевантности; очистили поиск — возвращаем «новые»
+            if (!searchQuery.trim() && value.trim() && sortBy === 'added-new') setSortBy('relevance');
+            if (!value.trim() && sortBy === 'relevance') setSortBy('added-new');
+            setSearchQuery(value);
+          }}
           sortBy={sortBy}
           onChangeSort={setSortBy}
           selectedRating={selectedRating}

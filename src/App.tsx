@@ -15,6 +15,7 @@ import CommunityInvitePage from "./pages/community/CommunityInvitePage";
 import CommunityDetailPage from "./pages/community/CommunityDetailPage";
 import CommunityPostPage from "./pages/community/CommunityPostPage";
 import DiscussionsPage from "./pages/community/DiscussionsPage";
+import TopUsersPage from "./pages/community/TopUsersPage";
 import MainLayout from './MainLayout';
 import ProfilePage from './pages/profile/Profile';
 import BadgesPage from './pages/profile/BadgesPage';
@@ -146,9 +147,12 @@ export default function App() {
           <Route path="/store" element={<OfflineGate><StorePage /></OfflineGate>} />
           <Route path="/store/recommendations" element={<OfflineGate><RecommendationsPage /></OfflineGate>} />
           <Route path="/store/trends" element={<OfflineGate><TrendsPage /></OfflineGate>} />
+          {/* цены Pro и пакетов валюты видны без входа (требование ЮKassa) */}
+          <Route path="/subscriptions" element={<OfflineGate><SubscriptionsPage /></OfflineGate>} />
           <Route path="/games/:id" element={<OfflineGate><GameDetailsPage /></OfflineGate>} />
           <Route path="/community" element={<OfflineGate><CommunityPage /></OfflineGate>} />
           <Route path="/community/discussions" element={<OfflineGate><DiscussionsPage /></OfflineGate>} />
+          <Route path="/community/top" element={<OfflineGate><TopUsersPage /></OfflineGate>} />
           <Route path="/community/:id" element={<OfflineGate><CommunityDetailPage /></OfflineGate>} />
           <Route path="/community/:id/post/:postId" element={<OfflineGate><CommunityPostPage /></OfflineGate>} />
         </Route>
@@ -162,7 +166,6 @@ export default function App() {
 <Route path="/shop/history" element={<OfflineGate><CoinHistoryPage /></OfflineGate>} />
 <Route path="/shop/packages" element={<OfflineGate><CosmeticsShopPage /></OfflineGate>} />
             <Route path="/appearance" element={<OfflineGate><AppearancePage /></OfflineGate>} />
-            <Route path="/subscriptions" element={<OfflineGate><SubscriptionsPage /></OfflineGate>} />
             <Route path="/news" element={<OfflineGate><NewsPage /></OfflineGate>} />
             <Route path="/inventory" element={<OfflineGate><InventoryPage /></OfflineGate>} />
             <Route path="/support/manage" element={<OfflineGate><SupportManagePage /></OfflineGate>} />

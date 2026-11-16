@@ -582,7 +582,7 @@ export default function AboutPage() {
                 </li>
               ))}
             </ul>
-            <p className="meta">От 399 ₽/мес · отмена в любой момент</p>
+            <p className="meta">От 183 ₽/мес · отмена в любой момент</p>
           </div>
         </div>
 

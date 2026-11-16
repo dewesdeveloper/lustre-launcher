@@ -24,6 +24,8 @@ import { reportDownload } from '../../api/downloadStats';
 import { sourceKeyFor } from '../../api/scanReports';
 import VirusCheckModal from './components/VirusCheckModal';
 import { reportRemoteInstall, type RemoteInstallState } from '../../api/remoteInstall';
+import { beforeLaunch } from '../../api/cloudSaves';
+import CloudSavesPanel from './components/CloudSavesPanel';
 
 const tokenize = (s: string) =>
   new Set(s.toLowerCase().split(/[^a-z0-9а-яё]+/).filter(t => t.length >= 3));
@@ -172,6 +174,8 @@ export default function LibraryGamePage() {
     if (!installed?.id) return;
     try {
       setLaunching(true);
+      // облачные сохранения: в облаке новее (играли на другом ПК) — предложить скачать
+      await beforeLaunch(Number(id), installed.installPath, dlg.confirm);
       const res = await electron?.launchGame?.(installed.id);
       if (res?.error) console.error(res.error);
       else refreshInstalled();
@@ -611,6 +615,7 @@ export default function LibraryGamePage() {
           </div>
         </div>
         {installed && <GameTranslatePanel installedId={installed.id} gameId={Number(id)} />}
+        {installed && <CloudSavesPanel gameId={Number(id)} gameDir={installed.installPath} />}
         </div>
       </div>
 

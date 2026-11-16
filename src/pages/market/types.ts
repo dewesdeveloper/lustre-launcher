@@ -120,4 +120,4 @@ export interface InstallProgress {
   bytes?: number;
 }
 
-export type SortKey = 'title-asc' | 'title-desc' | 'date-new' | 'date-old' | 'added-new' | 'added-old';
+export type SortKey = 'relevance' | 'title-asc' | 'title-desc' | 'date-new' | 'date-old' | 'added-new' | 'added-old';

@@ -9,8 +9,10 @@ import api from '../api';
 import { getShop } from '../api/shop';
 import { openChatWindow } from '../utils/openChat';
 import { BELL_REFRESH_EVENT } from '../utils/bell';
+import { needsEmail } from '../utils/accountEmail';
 import { nativeNotify } from '../utils/nativeNotify';
 import { getNotifyPrefs, playNotifSound } from '../utils/notifyPrefs';
+import { isChatMuted, syncChatMutes } from '../api/chatMutes';
 import Tooltip from './Tooltip';
 import { NotificationDropdown } from './chatbell/NotificationDropdown';
 import { admin } from '../admin';
@@ -46,6 +48,8 @@ const AdminBellSection = admin?.BellSection;
 
 const seenKey = (userId: number) => `lh_seen_comments_ts_${userId}`;
 const bonusSeenKey = (userId: number) => `lh_seen_bonus_${userId}`;
+/** Всплывашка «привяжите почту» — не чаще раза в день */
+const emailToastKey = (userId: number) => `lh_email_notice_${userId}`;
 
 export const ChatBell = () => {
   const { user } = useAuth();
@@ -66,6 +70,26 @@ export const ChatBell = () => {
   const bonusStamp = useRef('');
   const commentsRef = useRef(comments);
   commentsRef.current = comments;
+  // Аккаунт из Steam/GitHub без почты: пункт в «Системных», пока почту не привяжут
+  const needEmail = !!user?.id && needsEmail(user?.email);
+
+  useEffect(() => {
+    if (!needEmail || !user?.id) return;
+    const today = new Date().toDateString();
+    try { if (localStorage.getItem(emailToastKey(user.id)) === today) return; } catch { /* ignore */ }
+    // не в первые секунды запуска — там окно обновления и вход
+    const t = setTimeout(() => {
+      nativeNotify({
+        title: 'Привяжите почту',
+        body: 'У аккаунта нет почты: без неё не восстановить доступ, если вход через Steam или GitHub станет недоступен.',
+        tag: 'lh-bind-email',
+        payload: { type: 'settings' },
+        kind: 'notify',
+      });
+      try { localStorage.setItem(emailToastKey(user.id), today); } catch { /* ignore */ }
+    }, 8000);
+    return () => clearTimeout(t);
+  }, [needEmail, user?.id]);
 
   // Заявки в друзья: обновляем отдельно от выпадашки, чтобы системный тост
   // приходил и когда приложение свёрнуто (WS-события на заявки нет)
@@ -190,6 +214,7 @@ export const ChatBell = () => {
     getUnreadTotal()
       .then((v) => { if (!cancelled) setUnread(v); })
       .catch(() => {});
+    void syncChatMutes();
 
     const off = onChatEvent((data) => {
       if (data.type === 'chat.message') {
@@ -213,7 +238,8 @@ export const ChatBell = () => {
             kind: 'message',
             icon: data.sender?.avatar_url || '',
           });
-          if (shown) playNotifSound();
+          // заглушённый собеседник — всплывашка без звука
+          if (shown && !isChatMuted(msg?.sender_id)) playNotifSound();
         }
         // Если выпадашка закрыта — хотя бы обновляем список диалогов,
         // чтобы при открытии не показывать устаревшие счётчики.
@@ -305,6 +331,7 @@ export const ChatBell = () => {
     requests.length +
     newComments.length +
     (bonusReady ? 1 : 0) +
+    (needEmail ? 1 : 0) +
     staffCount;
 
   const unreadConvs = convs.filter((c) => c.unread > 0).slice(0, 4);
@@ -341,6 +368,8 @@ export const ChatBell = () => {
         total={total}
         canMarkRead={unread + newComments.length + (bonusReady ? 1 : 0) > 0}
         bonusReady={bonusReady}
+        needEmail={needEmail}
+        onBindEmail={() => navigate('/settings')}
         onOpenCosmetics={() => navigate('/cosmetics')}
         requests={requests}
         busyReq={busyReq}

@@ -58,6 +58,7 @@ function sections(username?: string): Section[] {
       links: [
         { label: 'Домашняя страница', to: '/community' },
         { label: 'Обсуждения', to: '/community/discussions' },
+        { label: 'Топ игроков', to: '/community/top' },
         { label: 'Скриншоты', to: '/community?tab=screenshots' },
         { label: 'Мастерская', to: '/community?tab=workshop' },
         { label: 'Трансляции', to: '/community?tab=broadcasts' },

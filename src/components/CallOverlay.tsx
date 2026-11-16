@@ -137,6 +137,7 @@ export default function CallOverlay() {
   const onPickSource = async (s: DesktopSource) => {
     setShareSource(s.id);
     setPickerOpen(false);
+    setQualityState(getQuality()); // качество могли сменить в окне выбора экрана
     if (st.sharingScreen) await restartScreenShare();
     else await startScreenShare();
   };

@@ -21,6 +21,14 @@ interface SelectProps {
 }
 
 const PANEL_MAX_H = 288; // max-h-72
+
+/** Кнопка выпадающего списка в стиле лаунчера — общая для Select и самодельных списков (теги каталога) */
+export const SELECT_BUTTON =
+  'w-full flex items-center justify-between gap-3 bg-[#08050f] border px-3.5 py-2.5 tl-head text-[10px] font-bold uppercase tracking-[0.14em] cursor-pointer transition-colors outline-none disabled:opacity-40 disabled:cursor-not-allowed';
+export const SELECT_BUTTON_IDLE = 'border-[var(--line)] text-pearl/75 hover:border-[var(--line-2)] hover:text-white';
+export const SELECT_BUTTON_OPEN = 'border-[var(--line-2)] text-white shadow-[inset_0_0_0_1px_var(--line-2)]';
+/** Панель списка — как у меню шапки */
+export const SELECT_PANEL = 'bg-[var(--panel2)] border border-[var(--line-2)] shadow-[0_0_24px_rgb(var(--accent-rgb)/.25)]';
 const GAP = 8;
 
 /**
@@ -106,12 +114,10 @@ const Select = ({
         title={title}
         disabled={disabled}
         onClick={() => setOpen((o) => !o)}
-        className={`w-full flex items-center justify-between gap-3 bg-black/55 border rounded-2xl px-5 py-3.5 text-[10px] font-bold uppercase tracking-[0.15em] text-pearl/75 cursor-pointer transition-all outline-none disabled:opacity-40 disabled:cursor-not-allowed ${
-          open ? 'border-accent/40 text-pearl bg-black/70' : 'border-white/10 hover:border-accent/30'
-        } ${buttonClassName}`}
+        className={`${SELECT_BUTTON} ${open ? SELECT_BUTTON_OPEN : SELECT_BUTTON_IDLE} ${buttonClassName}`}
       >
         <span className="truncate">{current ? current.label : placeholder}</span>
-        <ChevronDown size={14} className={`shrink-0 text-pearl/60 transition-transform ${open ? 'rotate-180 text-accent' : ''}`} />
+        <ChevronDown size={14} className={`shrink-0 text-[var(--muted)] transition-transform ${open ? 'rotate-180 text-accent' : ''}`} />
       </button>
 
       {createPortal(
@@ -124,10 +130,10 @@ const Select = ({
               exit={{ opacity: 0, y: -4, scale: 0.99 }}
               transition={{ duration: 0.14, ease: 'easeOut' }}
               style={pos}
-              className={`z-[1000] rounded-2xl bg-[#0c0c0c]/95 backdrop-blur-3xl border border-white/10 shadow-[0_25px_50px_rgba(0,0,0,0.9)] py-1.5 overflow-y-auto overflow-x-hidden custom-scrollbar ${panelClassName}`}
+              className={`z-[1000] ${SELECT_PANEL} p-1 overflow-y-auto overflow-x-hidden custom-scrollbar ${panelClassName}`}
             >
               {options.length === 0 ? (
-                <p className="px-4 py-3 text-[11px] text-pearl/60">Нет вариантов</p>
+                <p className="px-3 py-2.5 tl-term text-[14px] text-[var(--muted)]">Нет вариантов</p>
               ) : (
                 options.map((o) => {
                   const active = String(o.value) === String(value);
@@ -137,8 +143,8 @@ const Select = ({
                       type="button"
                       title={o.label}
                       onClick={() => { onChange(o.value); setOpen(false); }}
-                      className={`w-full px-4 py-2.5 text-[11px] font-black uppercase tracking-widest text-left flex items-center justify-between gap-3 whitespace-nowrap transition-all cursor-pointer ${
-                        active ? 'text-accent bg-accent/10' : 'text-pearl/70 hover:text-white hover:bg-violet/10'
+                      className={`w-full px-3 py-2 border-l-2 tl-head text-[10px] font-bold uppercase tracking-[0.1em] text-left flex items-center justify-between gap-3 whitespace-nowrap transition-colors cursor-pointer ${
+                        active ? 'text-accent bg-accent/10 border-[var(--pink)]' : 'text-pearl/70 border-transparent hover:text-white hover:bg-[rgb(var(--accent-rgb)/.08)] hover:border-[var(--pink)]'
                       }`}
                     >
                       <span className="truncate min-w-0">{o.label}</span>

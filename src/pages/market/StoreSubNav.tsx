@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode, type RefObject } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ChevronDown, Compass, Flame, Heart, LayoutGrid, Newspaper, Loader2, Search, ShoppingBag, Sparkles, Star, Users } from 'lucide-react';
+import { ChevronDown, Compass, Flame, Heart, LayoutGrid, Newspaper, Loader2, ShoppingBag, Sparkles, Star, Users } from 'lucide-react';
 import api from '../../api';
 import { getRecommendations, type RecommendationSignals, type Recommendations } from '../../api/recommendations';
 import { useSettings } from '../../context/SettingsContext';
 import { markLeavingToGame, titleCollator } from './constants';
+import GameSearchBox from './components/GameSearchBox';
 
 // Анимации выпадающих панелей (.animate-in, .slide-in-from-*, .anim-rise-N) описаны в index.css
 const PANEL = 'absolute top-full left-0 w-full mt-1 bg-[var(--panel)] border border-[var(--line-2)] shadow-[0_0_36px_rgb(var(--accent-rgb)/.28)] animate-in fade-in slide-in-from-top-2 duration-300 backdrop-blur-3xl origin-top overflow-hidden';
@@ -83,7 +84,6 @@ export const StoreSubNav = () => {
   const [rec, setRec] = useState<Recommendations | null>(null);
   const [recError, setRecError] = useState(false);
   const [tags, setTags] = useState<Tag[] | null>(tagCache);
-  const [query, setQuery] = useState('');
 
   const panelRef = useRef<HTMLDivElement>(null);
   const recBtn = useRef<HTMLButtonElement>(null);
@@ -106,12 +106,6 @@ export const StoreSubNav = () => {
     setPanel(null);
     markLeavingToGame(); // каталог восстановит прокрутку и фильтры при возврате
     navigate(`/games/${id}`);
-  };
-  const onSearch = (e: FormEvent) => {
-    e.preventDefault();
-    const q = query.trim();
-    navigate(q ? `/store?q=${encodeURIComponent(q)}` : '/store');
-    setQuery('');
   };
 
   const signals = rec?.signals;
@@ -152,18 +146,7 @@ export const StoreSubNav = () => {
             </Link>
           </nav>
 
-          <form role="search" onSubmit={onSearch} className="relative ml-auto hidden md:block">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]" />
-            <input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              data-search-hotkey="section"
-              placeholder="Поиск по магазину"
-              aria-label="Поиск по магазину"
-              className="tl-field with-icon text-[12px] w-56"
-            />
-          </form>
+          <GameSearchBox />
         </div>
       </div>
 

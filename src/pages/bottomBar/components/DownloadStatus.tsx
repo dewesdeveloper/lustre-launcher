@@ -27,7 +27,7 @@ interface DownloadStatusProps {
 }
 
 export const DownloadStatus = ({ active, paused, completed, total, pct, totalSpeed, currentGame, onOpenDownloads }: DownloadStatusProps) => (
-  <div className="flex flex-col items-center">
+  <div className="flex min-w-0 shrink-0 flex-col items-center whitespace-nowrap">
     {active.length > 0 ? (
       <button
         onClick={onOpenDownloads}
@@ -52,11 +52,11 @@ export const DownloadStatus = ({ active, paused, completed, total, pct, totalSpe
             transition={{ duration: 0.25 }}
             className="tracking-tighter tabular-nums"
           >
-            Загрузка {pct}% · {formatSpeed(totalSpeed)}
+            <span className="max-md:hidden">Загрузка </span>{pct}% · {formatSpeed(totalSpeed)}
           </motion.span>
         </AnimatePresence>
 
-        <span className="text-violet/40 text-[12px] tabular-nums">{active.length} | {total}</span>
+        <span className="text-violet/40 text-[12px] tabular-nums max-md:hidden">{active.length} | {total}</span>
       </button>
     ) : paused.length > 0 ? (
       <button
@@ -66,7 +66,7 @@ export const DownloadStatus = ({ active, paused, completed, total, pct, totalSpe
       >
         <IconPlayerPause size={14} className="text-yellow-400" />
         <span className="tracking-tighter">Пауза</span>
-        <span className="text-violet/40 text-[12px] tabular-nums">{paused.length} | {total}</span>
+        <span className="text-violet/40 text-[12px] tabular-nums max-md:hidden">{paused.length} | {total}</span>
       </button>
     ) : completed.length > 0 ? (
       <button
@@ -89,7 +89,7 @@ export const DownloadStatus = ({ active, paused, completed, total, pct, totalSpe
         >
           Загрузка завершена
         </motion.span>
-        <span className="text-violet/40 text-[12px] tabular-nums">{completed.length} | {total}</span>
+        <span className="text-violet/40 text-[12px] tabular-nums max-md:hidden">{completed.length} | {total}</span>
       </button>
     ) : (
       <button

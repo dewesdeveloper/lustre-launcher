@@ -1,6 +1,7 @@
 import { Search, LayoutGrid, List, X } from 'lucide-react';
 import type { SortKey } from '../../types';
 import { SORT_OPTIONS } from '../../constants';
+import Select from '../../../../components/ui/Select';
 
 interface CatalogToolbarProps {
   searchQuery: string;
@@ -21,6 +22,8 @@ interface CatalogToolbarProps {
   view: 'grid' | 'list';
   onChangeView: (view: 'grid' | 'list') => void;
 }
+
+const PAGE_SIZE_OPTIONS = [12, 24, 36, 48].map((n) => ({ value: n, label: `По ${n}` }));
 
 const viewBtn = (active: boolean) =>
   `w-10 h-[42px] flex items-center justify-center transition-colors cursor-pointer ${
@@ -80,13 +83,9 @@ const CatalogToolbar = ({
           )}
         </div>
 
-        <select className="tl-select" value={sortBy} onChange={(e) => onChangeSort(e.target.value as SortKey)} aria-label="Сортировка">
-          {SORT_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-        </select>
+        <Select value={sortBy} options={SORT_OPTIONS} onChange={(v) => onChangeSort(v as SortKey)} title="Сортировка" className="w-64 max-sm:w-full" />
 
-        <select className="tl-select" value={pageSize} onChange={(e) => onChangePageSize(Number(e.target.value))} aria-label="Игр на странице">
-          {[12, 24, 36, 48].map((n) => <option key={n} value={n}>По {n}</option>)}
-        </select>
+        <Select value={pageSize} options={PAGE_SIZE_OPTIONS} onChange={(v) => onChangePageSize(Number(v))} title="Игр на странице" className="w-28" />
 
         <div className="flex items-center border border-[var(--line)]">
           <button type="button" onClick={() => onChangeView('grid')} title="Сетка" aria-pressed={view === 'grid'} className={viewBtn(view === 'grid')}>

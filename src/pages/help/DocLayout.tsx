@@ -12,7 +12,7 @@ type LegalDocPageProps = {
   clauses: DocClause[];
 };
 
-const REVISION = 'Обновлено 10 сентября 2026 г.';
+const REVISION = 'Редакция от 15 ноября 2026 г.';
 
 /** Страница правового документа: «Назад», заголовок, пронумерованные разделы и дата редакции. */
 export function LegalDocPage({ title: [lead, accent], subtitle, clauses }: LegalDocPageProps) {

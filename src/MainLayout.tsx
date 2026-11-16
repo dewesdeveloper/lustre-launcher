@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
+import { matchGameTitle } from './utils/matchGameTitle';
 import api from './api';
 import { API_URL } from './api/config';
 import { LIBRARY_CHANGED_EVENT } from './utils/libraryEvents';
@@ -33,6 +34,8 @@ import { localClock } from './utils/localClock';
 import { reportScan, type ScanResult } from './api/scanReports';
 import { initRemoteInstall } from './api/remoteInstall';
 import { initFriendActivity } from './api/friendActivity';
+import { useWeakGpuPrompt } from './utils/weakGpu';
+import { afterGameExit } from './api/cloudSaves';
 
 export default function MainLayout({ children }: { children?: ReactNode }) {
   const { user } = useAuth();
@@ -54,6 +57,7 @@ export default function MainLayout({ children }: { children?: ReactNode }) {
       else if (payload?.type === 'profile' && payload.username) navigate(`/profile/${encodeURIComponent(payload.username)}`);
       else if (payload?.type === 'chat' && payload.userId) openChatWindow(payload.userId);
       else if (payload?.type === 'group') openChatWindow();
+      else if (payload?.type === 'settings') navigate('/settings');
       // payload.type === 'call' — оверлей звонка и так открыт в фокусе
     });
     return () => off?.();
@@ -103,20 +107,8 @@ export default function MainLayout({ children }: { children?: ReactNode }) {
       .catch(() => { /* офлайн — обновим при следующем событии */ });
   };
 
-  const matchCatalogGame = (registryName?: string) => {
-    const norm = (s: string) => s.toLowerCase().replace(/[^a-zа-я0-9]+/gi, ' ').trim();
-    const tokens = norm(registryName || '').split(' ').filter(Boolean);
-    if (!tokens.length) return 0;
-    let best = 0;
-    let bestScore = 0;
-    for (const g of libraryRef.current) {
-      const gt = new Set(norm(g.title).split(' ').filter(Boolean));
-      const score = tokens.filter(t => gt.has(t)).length;
-      if (score > bestScore) { best = g.id; bestScore = score; }
-    }
-    // совпасть должно хотя бы половиной токенов — иначе игра не из нашего каталога
-    return bestScore >= Math.ceil(tokens.length / 2) ? best : 0;
-  };
+  // номер части обязан совпасть (MW2 ≠ MW4), римские цифры = арабские — utils/matchGameTitle.ts
+  const matchCatalogGame = (registryName?: string) => matchGameTitle(registryName, libraryRef.current);
 
   // Каталожный id: electron присылает его напрямую (id в реестре — id скачивания),
   // а для старых записей без catalogId сопоставляем игру по имени из библиотеки.
@@ -182,6 +174,7 @@ export default function MainLayout({ children }: { children?: ReactNode }) {
 
   // «Друг запустил игру» — всплывающее уведомление (в колокольчик не попадает)
   useEffect(() => (user?.id ? initFriendActivity(user.id) : undefined), [user?.id]);
+  useWeakGpuPrompt(isElectron);
 
   // Удалённая установка с телефона: команда открывает страницу игры, та запускает загрузку.
   // Подписка раньше подключения WS — чтобы device.hello ушёл уже на первом __open.
@@ -224,6 +217,14 @@ export default function MainLayout({ children }: { children?: ReactNode }) {
         }
       } else {
         pendingLaunchRef.current = '';
+        // облачные сохранения: игра закрылась — загрузить изменившиеся сохранения
+        const closedId = resolveCatalogId(g);
+        if (closedId > 0) {
+          void electron?.installedGames?.().then((list: { id: string | number; installPath?: string }[]) => {
+            const entry = (list || []).find((x) => String(x.id) === String(g.id));
+            return afterGameExit(closedId, entry?.installPath || '');
+          }).catch(() => {});
+        }
         if (s) {
           // игра закрылась — досчитываем хвост и отправляем сразу
           s.pending += Date.now() - s.last;

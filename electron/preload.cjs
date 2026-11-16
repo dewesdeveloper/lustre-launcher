@@ -100,6 +100,7 @@ contextBridge.exposeInMainWorld('electron', {
   openInMain: (route) => ipcRenderer.send('open-in-main', route),
   setZoomFactor: (factor) => ipcRenderer.invoke('set-zoom-factor', factor),
   getDeviceInfo: () => ipcRenderer.invoke('get-device-info'),
+  gpuStatus: () => ipcRenderer.invoke('gpu-status'),
   // Окно обязательного обновления: статус/прогресс и повтор после ошибки
   getUpdateState: () => ipcRenderer.invoke('update:get-state'),
   retryUpdate: () => ipcRenderer.invoke('update:retry'),
@@ -118,6 +119,16 @@ contextBridge.exposeInMainWorld('electron', {
   torrentRemove: (opts) => ipcRenderer.invoke('torrent-remove', opts),
   torrentList: () => ipcRenderer.invoke('torrent-list'),
   torrentHealth: (magnets) => ipcRenderer.invoke('torrent-health', magnets),
+  // Облачные сохранения игр
+  cloudSaves: {
+    locate: (opts) => ipcRenderer.invoke('cloud-saves-locate', opts),
+    pack: (dir) => ipcRenderer.invoke('cloud-saves-pack', dir),
+    upload: (args) => ipcRenderer.invoke('cloud-saves-upload', args),
+    removeTemp: (file) => ipcRenderer.invoke('cloud-saves-remove-temp', file),
+    restore: (args) => ipcRenderer.invoke('cloud-saves-restore', args),
+    pickDir: () => ipcRenderer.invoke('cloud-saves-pick-dir'),
+    openDir: (dir) => ipcRenderer.invoke('cloud-saves-open-dir', dir),
+  },
   // Порт веб-интерфейса qBittorrent (настройки → Хранилище): лаунчер
   // подключается к Web API по этому порту, менять можно отсюда
   qbWebPortGet: () => ipcRenderer.invoke('qb-webport-get'),

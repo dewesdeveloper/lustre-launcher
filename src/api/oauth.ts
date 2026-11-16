@@ -23,6 +23,11 @@ export function getOAuthStartUrl(provider: string, consent = false): Promise<OAu
   return api.get(`/auth/oauth/start/${provider}${consent ? '?consent=1' : ''}`).then((r) => r.data);
 }
 
+/** Привязка сервиса к своему аккаунту (вход уже выполнен): тот же OAuth, но без новой сессии */
+export function getOAuthLinkUrl(provider: string): Promise<OAuthStartInfo> {
+  return api.get(`/auth/oauth/link/${provider}`).then((r) => r.data);
+}
+
 /** need_totp / need_device_approval — включена 2FA: сессии ещё нет, нужен второй фактор по login_token. */
 export interface OAuthResultData {
   status: string;
@@ -32,6 +37,8 @@ export interface OAuthResultData {
   device_token?: string;
   login_token?: string;
   message?: string;
+  /** status === 'linked' — какой сервис привязан */
+  provider?: string;
 }
 
 /** Результат входа: приложение опрашивает его после открытия браузера. */

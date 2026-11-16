@@ -65,6 +65,37 @@ export type SubscriptionStatus = {
   gift_months_done: number;
 };
 
+/** Пакет внутренней валюты (плоды изгнания) за рубли */
+export type CoinPackage = {
+  id: string;
+  title: string;
+  coins: number;
+  bonus_pct: number;
+  price_rub: number;
+  price_pro: number;
+  badge: string;
+  popular: boolean;
+  sort_weight: number;
+};
+
+export type PublicPrices = { plans: ProPlan[]; benefits: ProBenefit[]; packages: CoinPackage[] };
+
+/** Цены без входа в аккаунт: тарифы Pro, их преимущества и пакеты валюты */
+export async function getPublicPrices(): Promise<PublicPrices> {
+  return (await api.get<PublicPrices>('/prices')).data;
+}
+
+/** Статус «без подписки» для гостя: тарифы и преимущества из публичных цен */
+export function guestStatus(p: PublicPrices): SubscriptionStatus {
+  return {
+    is_pro: false, pro_until: null, pro_plan: '', days_left: 0, coins: 0, bonus_ready: false, next_bonus_at: null,
+    coin_limit: 0, base_limit: 0, daily_bonus: 0, base_bonus: 0, pro_frame_id: 'pro', frame_id: '', avatar_frame_url: '',
+    plans: p.plans, benefits: p.benefits,
+    limits: { groups: 0, group_members: 0, showcases: 0, favorites: 0, collections: 0, upload_mb: 0, coin_limit: 0, daily_bonus: 0, plan: '', gift_per_month: 0 },
+    gift_granted: false, gift_amount: 0, gift_per_month: 0, gift_total: 0, gift_next_at: null, gift_months_done: 0,
+  };
+}
+
 export async function getSubscription(): Promise<SubscriptionStatus> {
   return (await api.get<SubscriptionStatus>('/subscriptions/')).data;
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Monitor, X, AppWindow, Loader2 } from 'lucide-react';
+import { Monitor, X, AppWindow, Loader2, Crown } from 'lucide-react';
+import { QUALITY_PRESETS, canUseHd, getQuality, setQuality, type MediaQuality } from '../api/mediaQuality';
 
 export interface DesktopSource {
   id: string;
@@ -20,9 +21,20 @@ export default function ScreenSourcePicker({ open, onClose, onPick }: Props) {
   const [sources, setSources] = useState<DesktopSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'screen' | 'window'>('screen');
+  // качество стрима выбирается до старта: SD — всем, HD (1080p/60) — с Lustre Pro
+  const [quality, setQualityState] = useState<MediaQuality>(getQuality);
+  const [hdHint, setHdHint] = useState(false);
+  const hdAllowed = canUseHd();
+  const pickQuality = (q: MediaQuality) => {
+    if (q === 'hd' && !hdAllowed) { setHdHint(true); return; }
+    setHdHint(false);
+    setQualityState(setQuality(q));
+  };
 
   useEffect(() => {
     if (!open) return;
+    setQualityState(getQuality());
+    setHdHint(false);
     const electron = (window as any).electron;
     if (!electron?.getDesktopSources) {
       setLoading(false);
@@ -66,7 +78,24 @@ export default function ScreenSourcePicker({ open, onClose, onPick }: Props) {
           >
             <AppWindow size={13} /> Окна
           </button>
+          <div className="ml-auto flex items-center gap-1" title="Качество стрима">
+            {(['sd', 'hd'] as MediaQuality[]).map((q) => (
+              <button
+                key={q}
+                onClick={() => pickQuality(q)}
+                title={QUALITY_PRESETS[q].label}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-black uppercase tracking-wider transition-colors ${quality === q ? 'bg-accent/15 text-accent' : 'text-pearl/70 hover:text-pearl'}`}
+              >
+                {q === 'hd' && !hdAllowed && <Crown size={12} className="text-amber-300" />}
+                {QUALITY_PRESETS[q].short}
+                <span className="font-normal normal-case tracking-normal text-pearl/50 max-sm:hidden">{q === 'hd' ? '1080p·60' : '720p·30'}</span>
+              </button>
+            ))}
+          </div>
         </div>
+        {hdHint && (
+          <p className="px-5 pt-2 text-[12px] text-amber-300">Стрим в HD (1080p, 60 к/с) доступен с подпиской Lustre Pro.</p>
+        )}
 
         <div className="p-5 overflow-y-auto custom-scrollbar">
           {loading ? (

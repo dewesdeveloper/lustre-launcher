@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { Search, ChevronDown, X } from 'lucide-react';
 import { AGE_RATINGS } from '../../constants';
 import { KIND_OPTIONS, RU_OPTIONS, SOURCE_LABEL, YEAR_OPTIONS, type ExtraFilters } from './extraFilters';
+import Select, { SELECT_BUTTON, SELECT_BUTTON_IDLE, SELECT_BUTTON_OPEN, SELECT_PANEL } from '../../../../components/ui/Select';
 
 const TagPill = ({ tag, selected, onToggle }: { tag: string; selected: boolean; onToggle: (t: string) => void }) => (
   <button
@@ -183,16 +184,16 @@ const CatalogFilters = ({
                   type="button"
                   onClick={() => setTagsOpen(!tagsOpen)}
                   aria-expanded={tagsOpen}
-                  className="tl-field flex items-center justify-between cursor-pointer"
+                  className={`${SELECT_BUTTON} ${tagsOpen ? SELECT_BUTTON_OPEN : SELECT_BUTTON_IDLE}`}
                 >
-                  <span className={selectedTags.length > 0 ? 'text-[var(--text)]' : 'text-[var(--muted-2)]'}>
+                  <span className="truncate">
                     {selectedTags.length > 0 ? `Выбрано: ${selectedTags.length}` : 'Выбрать теги…'}
                   </span>
-                  <ChevronDown size={14} className={`text-[var(--muted)] transition-transform ${tagsOpen ? 'rotate-180' : ''}`} />
+                  <ChevronDown size={14} className={`shrink-0 text-[var(--muted)] transition-transform ${tagsOpen ? 'rotate-180 text-accent' : ''}`} />
                 </button>
 
                 {tagsOpen && (
-                  <div className="mt-1 w-full bg-[var(--panel2)] border border-[var(--line-2)] shadow-[0_0_24px_rgb(var(--accent-rgb)/.25)] flex flex-col overflow-hidden z-20 relative">
+                  <div className={`mt-2 w-full ${SELECT_PANEL} flex flex-col overflow-hidden z-20 relative`}>
                     <div className="p-2 border-b border-[var(--line)] shrink-0">
                       <div className="relative">
                         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--muted)]" size={14} />
@@ -241,10 +242,12 @@ const CatalogFilters = ({
         {allLanguages.length > 0 && (
           <div>
             <span className={LABEL}>Язык</span>
-            <select className="tl-select w-full" value={selectedLang} onChange={(e) => onChangeLang(e.target.value)}>
-              <option value="">Все языки</option>
-              {allLanguages.map((l) => <option key={l} value={l}>{l}</option>)}
-            </select>
+            <Select
+              value={selectedLang}
+              options={[{ value: '', label: 'Все языки' }, ...allLanguages.map((l) => ({ value: l, label: l }))]}
+              onChange={(v) => onChangeLang(String(v))}
+              title="Язык"
+            />
           </div>
         )}
 
