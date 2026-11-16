@@ -59,9 +59,15 @@ function scanPath(target) {
     child.on('error', () => { clearTimeout(timer); finish({ status: 'unavailable', threats: [] }) })
     child.on('close', (code) => {
       clearTimeout(timer)
-      // 0 — угроз нет, 2 — найдены угрозы; остальное — сбой проверки (Защитник выключен и т.п.)
+      // 0 — угроз нет. Код 2 MpCmdRun возвращает и при найденных угрозах, и при ошибке Windows
+      // ERROR_FILE_NOT_FOUND (0x80070002 — путь не найден): раньше любой код 2 считался угрозой,
+      // и в каталог уходили «угрозы без названия» у файлов, которые у других игроков чистые.
+      // Угроза — только если Защитник перечислил найденное.
       if (code === 0) return finish({ status: 'clean', threats: [] })
-      if (code === 2) return finish({ status: 'threat', threats: parseThreats(out) })
+      const threats = parseThreats(out)
+      const found = /found\s+([1-9]\d*)\s+threats?/i.test(out) || /LIST OF DETECTED THREATS/i.test(out)
+      if (code === 2 && (threats.length > 0 || found)) return finish({ status: 'threat', threats })
+      if (code === 2) console.warn('[Defender] код 2 без списка угроз — считаю сбоем проверки:', out.trim().slice(-300))
       finish({ status: /0x800106ba|service|отключ|disabled/i.test(out) ? 'unavailable' : 'error', threats: [] })
     })
   })
