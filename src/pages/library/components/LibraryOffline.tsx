@@ -56,6 +56,8 @@ export default function LibraryOffline() {
     const res = await electron?.uninstallGame?.(g.id);
     if (res?.keptFiles) {
       await dlg.alert({ title: 'Игра убрана из библиотеки', message: `Игра была установлена своим установщиком, поэтому её файлы остались в ${res.path}. Удалите их её деинсталлятором или вручную.` });
+    } else if (res?.uninstallEntryLeft) {
+      await dlg.alert({ title: 'Игра удалена', message: 'Файлы игры удалены, но запись в «Установленных приложениях» Windows осталась: не хватило прав администратора. Её можно убрать в «Параметры → Приложения» или удалить игру ещё раз и разрешить запрос прав.' });
     }
     setGames((prev) => prev.filter((x) => x.id !== g.id));
   };

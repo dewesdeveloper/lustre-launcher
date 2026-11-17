@@ -1,8 +1,10 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useLayoutEffect, useRef, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, ChevronDown, X } from 'lucide-react';
 import { AGE_RATINGS } from '../../constants';
 import { KIND_OPTIONS, RU_OPTIONS, SOURCE_LABEL, YEAR_OPTIONS, type ExtraFilters } from './extraFilters';
 import Select, { SELECT_BUTTON, SELECT_BUTTON_IDLE, SELECT_BUTTON_OPEN, SELECT_PANEL } from '../../../../components/ui/Select';
+import DeveloperInput from './DeveloperInput';
 
 const TagPill = ({ tag, selected, onToggle }: { tag: string; selected: boolean; onToggle: (t: string) => void }) => (
   <button
@@ -79,20 +81,68 @@ const CatalogFilters = ({
   const [tagsOpen, setTagsOpen] = useState(false);
   const [tagSearch, setTagSearch] = useState('');
   const tagsRef = useRef<HTMLDivElement>(null);
+  const tagsPanelRef = useRef<HTMLDivElement>(null);
+  const [tagsPos, setTagsPos] = useState<CSSProperties | null>(null);
+
+  // Панель тегов — поверх страницы (портал, fixed по кнопке), как выпадающий список языков:
+  // внутри колонки фильтров она раздвигала панель. Снизу мало места — открываем вверх.
+  const tagsPosFor = (): CSSProperties | null => {
+    const el = tagsRef.current;
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    const gap = 8;
+    const below = window.innerHeight - r.bottom - gap * 2;
+    const above = r.top - gap * 2;
+    const up = below < 260 && above > below;
+    const room = Math.max(160, Math.min(420, up ? above : below));
+    const width = Math.min(Math.max(r.width, 280), window.innerWidth - gap * 2);
+    const left = Math.max(gap, Math.min(r.left, window.innerWidth - width - gap));
+    return { position: 'fixed', left, width, maxHeight: room, ...(up ? { bottom: window.innerHeight - r.top + gap, top: 'auto' } : { top: r.bottom + gap, bottom: 'auto' }) };
+  };
+  const placeTags = () => { const p = tagsPosFor(); if (p) setTagsPos(p); };
+  // при прокрутке двигаем панель напрямую, в кадре отрисовки — через состояние React она отставала
+  const tagsFrame = useRef(0);
+  const followTags = () => {
+    cancelAnimationFrame(tagsFrame.current);
+    tagsFrame.current = requestAnimationFrame(() => {
+      const p = tagsPosFor();
+      const el = tagsPanelRef.current;
+      if (!p || !el) return;
+      for (const [k, v] of Object.entries(p)) (el.style as any)[k] = typeof v === 'number' ? `${v}px` : v;
+    });
+    // прокрутка закончилась — сохраняем позицию в состоянии, чтобы перерисовка (выбор тега) не вернула старую
+    clearTimeout(tagsSync.current);
+    tagsSync.current = setTimeout(placeTags, 150);
+  };
+  const tagsSync = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useLayoutEffect(() => {
+    if (tagsOpen) placeTags();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tagsOpen]);
 
   // закрытие выпадающего списка: клик мимо или Esc
   useEffect(() => {
     if (!tagsOpen) return;
     const onDown = (e: MouseEvent) => {
-      if (tagsRef.current && !tagsRef.current.contains(e.target as Node)) setTagsOpen(false);
+      const t = e.target as Node;
+      if (!tagsRef.current?.contains(t) && !tagsPanelRef.current?.contains(t)) setTagsOpen(false);
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setTagsOpen(false); };
+    // прокрутка самой панели её не двигает; прокрутка страницы — пересчёт позиции
+    const onScroll = (e: Event) => { if (!tagsPanelRef.current?.contains(e.target as Node)) followTags(); };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', followTags);
     return () => {
+      cancelAnimationFrame(tagsFrame.current);
+      clearTimeout(tagsSync.current);
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', followTags);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tagsOpen]);
 
   // взрослые теги не показываем, если в настройках включено «Скрывать 18+»
@@ -192,8 +242,8 @@ const CatalogFilters = ({
                   <ChevronDown size={14} className={`shrink-0 text-[var(--muted)] transition-transform ${tagsOpen ? 'rotate-180 text-accent' : ''}`} />
                 </button>
 
-                {tagsOpen && (
-                  <div className={`mt-2 w-full ${SELECT_PANEL} flex flex-col overflow-hidden z-20 relative`}>
+                {tagsOpen && tagsPos && createPortal(
+                  <div ref={tagsPanelRef} style={tagsPos} className={`z-[1000] ${SELECT_PANEL} flex flex-col overflow-hidden`}>
                     <div className="p-2 border-b border-[var(--line)] shrink-0">
                       <div className="relative">
                         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--muted)]" size={14} />
@@ -207,7 +257,7 @@ const CatalogFilters = ({
                         />
                       </div>
                     </div>
-                    <div className="overflow-y-auto max-h-72 custom-scrollbar px-2.5 py-2.5 flex flex-col gap-2">
+                    <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar px-2.5 py-2.5 flex flex-col gap-2">
                       {sectionTags.regular.length > 0 && (
                         <div>
                           <div className="tl-head text-[10px] font-bold uppercase tracking-[0.25em] text-[var(--muted)] mb-1.5">Основные</div>
@@ -226,7 +276,8 @@ const CatalogFilters = ({
                         <div className="px-3 py-4 text-center text-xs text-[var(--muted)]">Ничего не найдено</div>
                       )}
                     </div>
-                  </div>
+                  </div>,
+                  document.body,
                 )}
               </div>
             ) : (
@@ -263,16 +314,7 @@ const CatalogFilters = ({
         {developers.length > 0 && (
           <div>
             <span className={LABEL}>Разработчик или издатель</span>
-            <input
-              list="lh-catalog-developers"
-              className="tl-field"
-              placeholder="Начните вводить…"
-              value={extra.developer}
-              onChange={(e) => onChangeExtra({ developer: e.target.value })}
-            />
-            <datalist id="lh-catalog-developers">
-              {developers.map((d) => <option key={d} value={d} />)}
-            </datalist>
+            <DeveloperInput value={extra.developer} options={developers} onChange={(developer) => onChangeExtra({ developer })} />
           </div>
         )}
 
@@ -305,7 +347,7 @@ const CatalogFilters = ({
             type="checkbox"
             checked={extra.hideOwned}
             onChange={(e) => onChangeExtra({ hideOwned: e.target.checked })}
-            className="h-4 w-4 accent-[color:var(--color-accent)]"
+            className="tl-check"
           />
           <span className="tl-term text-[15px] text-[var(--muted)]">Скрыть игры из моей библиотеки</span>
         </label>

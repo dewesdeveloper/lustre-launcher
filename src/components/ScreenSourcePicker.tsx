@@ -54,13 +54,13 @@ export default function ScreenSourcePicker({ open, onClose, onPick }: Props) {
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="w-[680px] max-w-[92vw] max-h-[80vh] rounded-2xl bg-[#101322] border border-white/10 shadow-2xl overflow-hidden flex flex-col"
+        className="w-[680px] max-w-[92vw] max-h-[80vh] bg-[var(--panel)] border border-[var(--line-2)] shadow-[0_0_36px_rgb(var(--accent-rgb)/.25)] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 px-5 py-4 border-b border-white/5">
           <Monitor size={16} className="text-accent" />
           <span className="text-sm font-black uppercase tracking-widest text-pearl/70">Демонстрация экрана</span>
-          <button onClick={onClose} className="ml-auto p-1.5 rounded-lg text-pearl/70 hover:text-pearl hover:bg-white/5 transition-colors">
+          <button onClick={onClose} className="ml-auto p-1.5 text-pearl/70 hover:text-pearl hover:bg-white/5 transition-colors">
             <X size={16} />
           </button>
         </div>
@@ -68,13 +68,13 @@ export default function ScreenSourcePicker({ open, onClose, onPick }: Props) {
         <div className="flex gap-1 px-5 pt-3">
           <button
             onClick={() => setTab('screen')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[11px] font-black uppercase tracking-wider transition-colors ${tab === 'screen' ? 'bg-accent/15 text-accent' : 'text-pearl/70 hover:text-pearl'}`}
+            className={`flex items-center gap-2 px-4 py-2 text-[11px] font-black uppercase tracking-wider transition-colors ${tab === 'screen' ? 'bg-accent/15 text-accent' : 'text-pearl/70 hover:text-pearl'}`}
           >
             <Monitor size={13} /> Экраны
           </button>
           <button
             onClick={() => setTab('window')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-[11px] font-black uppercase tracking-wider transition-colors ${tab === 'window' ? 'bg-accent/15 text-accent' : 'text-pearl/70 hover:text-pearl'}`}
+            className={`flex items-center gap-2 px-4 py-2 text-[11px] font-black uppercase tracking-wider transition-colors ${tab === 'window' ? 'bg-accent/15 text-accent' : 'text-pearl/70 hover:text-pearl'}`}
           >
             <AppWindow size={13} /> Окна
           </button>
@@ -84,7 +84,7 @@ export default function ScreenSourcePicker({ open, onClose, onPick }: Props) {
                 key={q}
                 onClick={() => pickQuality(q)}
                 title={QUALITY_PRESETS[q].label}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-black uppercase tracking-wider transition-colors ${quality === q ? 'bg-accent/15 text-accent' : 'text-pearl/70 hover:text-pearl'}`}
+                className={`flex items-center gap-1.5 px-3 py-2 text-[11px] font-black uppercase tracking-wider transition-colors ${quality === q ? 'bg-accent/15 text-accent' : 'text-pearl/70 hover:text-pearl'}`}
               >
                 {q === 'hd' && !hdAllowed && <Crown size={12} className="text-amber-300" />}
                 {QUALITY_PRESETS[q].short}
@@ -108,7 +108,7 @@ export default function ScreenSourcePicker({ open, onClose, onPick }: Props) {
                 <button
                   key={s.id}
                   onClick={() => onPick(s)}
-                  className="group text-left rounded-xl overflow-hidden border border-white/10 hover:border-accent/50 bg-black/30 transition-colors"
+                  className="group text-left overflow-hidden border border-white/10 hover:border-accent/50 bg-black/30 transition-colors"
                 >
                   <div className="relative aspect-video bg-black/50">
                     {s.thumbnail ? (

@@ -94,7 +94,7 @@ export default function PathPickerModal({ open, kind, gameTitle, onClose, onConf
             type="checkbox"
             checked={dontShow}
             onChange={(e) => setDontShow(e.target.checked)}
-            className="accent-[color:var(--color-accent)] cursor-pointer"
+            className="tl-check"
           />
           Не показывать снова
         </label>

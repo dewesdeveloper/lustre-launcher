@@ -32,7 +32,9 @@ function findMpCmdRun() {
 function parseThreats(output) {
   const found = new Set()
   for (const m of String(output).matchAll(/^\s*Threat\s*:\s*(.+?)\s*$/gim)) found.add(m[1])
-  return [...found]
+  // «Unknown» Защитник пишет рядом с настоящим названием — лишняя строка, не отдельная угроза
+  const named = [...found].filter((t) => !/^unknown$/i.test(t))
+  return named.length ? named : [...found]
 }
 
 /**

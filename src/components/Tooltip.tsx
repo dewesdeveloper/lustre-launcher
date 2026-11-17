@@ -31,7 +31,7 @@ export default function Tooltip({
       {children}
       <span
         role="tooltip"
-        className={`pointer-events-none absolute ${pos} ${alignCls} z-[200] w-max max-w-[240px] rounded-xl border border-white/10 bg-[#0b0b0e] px-3 py-2 shadow-[0_10px_30px_rgba(0,0,0,0.6)] opacity-0 translate-y-[-2px] group-hover/tip:opacity-100 group-hover/tip:translate-y-0 transition-all duration-150 delay-200`}
+        className={`pointer-events-none absolute ${pos} ${alignCls} z-[200] w-max max-w-[240px] border border-[var(--line-2)] bg-[var(--panel2)] px-3 py-2 shadow-[0_10px_30px_rgba(0,0,0,0.6)] opacity-0 translate-y-[-2px] group-hover/tip:opacity-100 group-hover/tip:translate-y-0 transition-all duration-150 delay-200`}
       >
         <span className="block text-[12px] font-black text-pearl leading-tight">{label}</span>
         {hint ? <span className="block text-[10px] font-bold text-pearl/70 leading-tight mt-1">{hint}</span> : null}

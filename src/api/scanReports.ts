@@ -23,7 +23,16 @@ export type ScanResult = {
   engine: string;
 };
 
-type SourceLike = { kind?: string; magnet_uri?: string; url?: string };
+/**
+ * Все находки — «PUA:» (потенциально нежелательная программа): Защитник так отмечает упаковщики
+ * и утилиты, которыми часто собраны кряки и установщики репаков. Это не вирус, и показываем мягче.
+ */
+export function isPuaOnly(threats: string[]): boolean {
+  const named = threats.filter((t) => !/^unknown$/i.test(t));
+  return named.length > 0 && named.every((t) => /^PUA:/i.test(t));
+}
+
+type SourceLike ={ kind?: string; magnet_uri?: string; url?: string };
 
 const BASE32 = 'abcdefghijklmnopqrstuvwxyz234567';
 

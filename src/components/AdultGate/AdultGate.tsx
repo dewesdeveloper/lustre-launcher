@@ -156,7 +156,7 @@ export function AdultGateProvider({ children }: { children: ReactNode }) {
                   type="checkbox"
                   checked={dontShow}
                   onChange={(e) => setDontShow(e.target.checked)}
-                  className="mt-0.5 w-4 h-4 accent-[var(--pink)] cursor-pointer"
+                  className="tl-check mt-0.5"
                 />
                 <span className="tl-head text-[10px] leading-[1.6] uppercase tracking-[0.1em] text-pearl/70 group-hover:text-white transition-colors">
                   Больше не показывать

@@ -183,6 +183,8 @@ contextBridge.exposeInMainWorld('electron', {
     ipcRenderer.on('translator-progress', handler);
     return () => ipcRenderer.removeListener('translator-progress', handler);
   },
+  // идущие установки (их состояние переживает переход между страницами)
+  getInstallStatus: () => ipcRenderer.invoke('install-status'),
   onInstallProgress: (callback) => {
     const handler = (_event, payload) => callback(payload);
     ipcRenderer.on('install-progress', handler);

@@ -46,6 +46,15 @@ export default function DownloadsPage() {
     });
     const offUpdates = electron?.onTorrentUpdate?.((list: Download[]) => setDownloads(list || []));
     refreshInstalled();
+    // установки, которые уже идут (страницу могли открыть заново посреди установки)
+    electron?.getInstallStatus?.().then((list: InstallProgress[]) => {
+      if (!Array.isArray(list) || list.length === 0) return;
+      setInstallStates(prev => {
+        const next = { ...prev };
+        for (const p of list) next[p.gameId] = { phase: p.phase, percent: p.percent, silent: p.silent, bytes: p.bytes };
+        return next;
+      });
+    }).catch(() => {});
     const offInstall = electron?.onInstallProgress?.((p: InstallProgress) => {
       if (p.phase === 'idle') {
         setInstallStates(prev => {
@@ -121,6 +130,8 @@ export default function DownloadsPage() {
     const res = await electron?.uninstallGame?.(g.id);
     if (res?.keptFiles) {
       await dlg.alert({ title: 'Игра убрана из библиотеки', message: `Игра была установлена своим установщиком, поэтому её файлы остались в ${res.path}. Удалите их её деинсталлятором или вручную.` });
+    } else if (res?.uninstallEntryLeft) {
+      await dlg.alert({ title: 'Игра удалена', message: 'Файлы игры удалены, но запись в «Установленных приложениях» Windows осталась: не хватило прав администратора. Её можно убрать в «Параметры → Приложения» или удалить игру ещё раз и разрешить запрос прав.' });
     }
     setInstalled(prev => prev.filter(x => x.id !== g.id));
   };

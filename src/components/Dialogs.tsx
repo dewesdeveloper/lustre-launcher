@@ -83,10 +83,10 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
               exit={{ scale: 0.95, y: 8, opacity: 0 }}
               transition={{ type: 'spring', damping: 24, stiffness: 320 }}
               onMouseDown={(e) => e.stopPropagation()}
-              className="w-full max-w-[400px] bg-[#131018] border border-violet/20 rounded-2xl shadow-2xl shadow-black/60 overflow-hidden"
+              className="w-full max-w-[400px] bg-[var(--panel)] border border-[var(--line-2)] shadow-[0_0_36px_rgb(var(--accent-rgb)/.25)] overflow-hidden"
             >
               <div className="p-6 flex gap-4">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${iconTone}`}>
+                <div className={`w-10 h-10 flex items-center justify-center shrink-0 ${iconTone}`}>
                   <Icon size={18} />
                 </div>
                 <div className="min-w-0">
@@ -101,7 +101,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
                 {dialog.type === 'confirm' && (
                   <button
                     onClick={() => finish(false)}
-                    className="flex-1 py-2.5 rounded-xl bg-white/5 border border-white/10 text-pearl/60 text-[10px] font-black uppercase tracking-widest hover:bg-white/10 hover:text-pearl transition-all active:scale-95"
+                    className="flex-1 py-2.5 bg-white/5 border border-white/10 text-pearl/60 text-[10px] font-black uppercase tracking-widest hover:bg-white/10 hover:text-pearl transition-all active:scale-95"
                   >
                     {dialog.cancelText || 'Отмена'}
                   </button>
@@ -109,7 +109,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
                 <button
                   autoFocus
                   onClick={() => finish(true)}
-                  className={`flex-1 py-2.5 rounded-xl text-white text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${dialog.danger ? 'bg-red-600 hover:bg-red-500' : 'bg-accent hover:bg-accent/80'}`}
+                  className={`flex-1 py-2.5 text-white text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${dialog.danger ? 'bg-red-600 hover:bg-red-500' : 'bg-accent hover:bg-accent/80'}`}
                 >
                   {dialog.confirmText || (dialog.type === 'alert' ? 'ОК' : 'Подтвердить')}
                 </button>

@@ -2,14 +2,14 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   Play, Loader2, FolderSearch, MonitorSmartphone,
-  Building2, Calendar, Shield, Clock, Tag, ShieldCheck } from 'lucide-react';
+  ShieldCheck } from 'lucide-react';
 import api from '../../api';
 import { useDialog } from '../../components/Dialogs';
 import { notifyLibraryChanged } from '../../utils/libraryEvents';
 import type { InstalledGame, Game } from './types';
 import { landCoverFlight } from '../../utils/coverFlight';
 import GameActionsMenu from './components/GameActionsMenu';
-import GameStatsPanel from './components/GameStatsPanel';
+import { AboutSection, InfoPanel, InstallPanel, ScreenshotStrip, StatTile, type GameMediaItem } from './components/LibraryGameSections';
 import GameTranslatePanel from './components/GameTranslatePanel';
 import { Loading } from '../../components/Loading';
 import SourcePickerModal, { type DownloadSource } from '../market/components/SourcePickerModal';
@@ -19,7 +19,6 @@ import { getAppPaths } from '../../utils/appPaths';
 import { fetchItchFiles, type ItchFile } from '../market/itchFiles';
 import { gameBannerUrl, gameBannerFallback } from '../../utils/gameBanner';
 import { formatPlaytime } from '../../utils/playtime';
-import { safeHtml } from '../../utils/safeHtml';
 import { reportDownload } from '../../api/downloadStats';
 import { sourceKeyFor } from '../../api/scanReports';
 import VirusCheckModal from './components/VirusCheckModal';
@@ -69,6 +68,8 @@ export default function LibraryGamePage() {
   const [submenuOpen, setSubmenuOpen] = useState(false);
   const [shortcutMsg, setShortcutMsg] = useState('');
   const [installing, setInstalling] = useState(false);
+  // установка этой игры уже идёт в фоне (запущена со страницы загрузок или раньше)
+  const [bgInstall, setBgInstall] = useState(false);
   const [installError, setInstallError] = useState('');
   const [virusCheckOpen, setVirusCheckOpen] = useState(false);
   const [sourcePickerOpen, setSourcePickerOpen] = useState(false);
@@ -138,7 +139,12 @@ export default function LibraryGamePage() {
 
   // Обновляем статус установки: по событию завершения и при возврате на страницу
   useEffect(() => {
-    const off = electron?.onInstallProgress?.((p: { gameId: string; phase: string; percent: number }) => {
+    const mine = (p: { catalogId?: number }) => Number(p?.catalogId) === Number(id);
+    electron?.getInstallStatus?.().then((list: { catalogId?: number }[]) => {
+      setBgInstall(Array.isArray(list) && list.some(mine));
+    }).catch(() => {});
+    const off = electron?.onInstallProgress?.((p: { gameId: string; phase: string; percent: number; catalogId?: number }) => {
+      if (mine(p)) setBgInstall(p.phase !== 'done' && p.phase !== 'idle');
       if (p.phase === 'done') refreshInstalled();
     });
     const onFocus = () => refreshInstalled();
@@ -147,7 +153,7 @@ export default function LibraryGamePage() {
       window.removeEventListener('focus', onFocus);
       if (typeof off === 'function') off();
     };
-  }, [electron, refreshInstalled]);
+  }, [electron, refreshInstalled, id]);
 
   // Закрытие меню по клику вне
   useEffect(() => {
@@ -197,6 +203,8 @@ export default function LibraryGamePage() {
     if (!res?.error) reportDownload(Number(id), 'uninstalled');
     if (res?.keptFiles) {
       await dlg.alert({ title: 'Игра убрана из библиотеки', message: `Игра была установлена своим установщиком, поэтому её файлы остались в ${res.path}. Удалите их её деинсталлятором или вручную.` });
+    } else if (res?.uninstallEntryLeft) {
+      await dlg.alert({ title: 'Игра удалена', message: 'Файлы игры удалены, но запись в «Установленных приложениях» Windows осталась: не хватило прав администратора. Её можно убрать в «Параметры → Приложения» или удалить игру ещё раз и разрешить запрос прав.' });
     }
     refreshInstalled();
   };
@@ -379,16 +387,19 @@ export default function LibraryGamePage() {
     Number(installed?.lastPlayedAt) || 0,
     libLastPlayedAt ? new Date(libLastPlayedAt).getTime() : 0,
   );
+  const playtimeText = formatPlaytime(Math.max(libPlaytime, installed?.playtimeMs || 0));
+  const releaseYear = game.release_date ? new Date(game.release_date).getFullYear() : 0;
+  const media = ((game as Game & { media?: GameMediaItem[] }).media) || [];
 
   return (
-    <div className="min-h-screen bg-main-bg text-pearl animate-in fade-in duration-300 pb-10">
-      {/* --- БАННЕР --- */}
-      <div ref={bannerRef} className="relative h-[300px] overflow-hidden">
+    <div className="min-h-screen bg-main-bg text-pearl animate-in fade-in duration-300 pb-12">
+      {/* --- ШАПКА --- */}
+      <div ref={bannerRef} className="relative h-[340px] overflow-hidden">
         {banner ? (
           <img
             src={banner}
             alt={game.title}
-            className="absolute inset-0 w-full h-full object-cover"
+            className="absolute inset-0 h-full w-full object-cover"
             onError={(e) => {
               const el = e.currentTarget;
               const fb = gameBannerFallback(game);
@@ -398,224 +409,115 @@ export default function LibraryGamePage() {
         ) : (
           <div className="absolute inset-0 bg-linear-to-br from-violet/20 via-main-bg to-accent/10" />
         )}
-        <div className="absolute inset-0 bg-linear-to-t from-main-bg via-main-bg/20 to-transparent" />
-        <div className="absolute inset-0 bg-linear-to-r from-main-bg/80 via-transparent to-main-bg/40" />
+        <div className="absolute inset-0 bg-linear-to-t from-main-bg via-main-bg/35 to-transparent" />
+        <div className="absolute inset-0 bg-linear-to-r from-main-bg/85 via-main-bg/10 to-transparent" />
 
-        {game.age_rating && (
-          <div className="absolute top-4 right-8 tl-chip age">
-            {game.age_rating}+
+        <div className="absolute bottom-[76px] left-8 right-8 max-md:left-4 max-md:right-4">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <span className={`tl-chip ${installed ? 'ok' : 'age'}`}>{installed ? 'Установлена' : 'Не установлена'}</span>
+            {favorite && <span className="tl-chip rare">В избранном</span>}
+            {game.age_rating && <span className="tl-chip age">{game.age_rating}+</span>}
           </div>
-        )}
-
-        <div className="absolute bottom-5 left-8 right-8">
-          <h1 className="text-3xl md:text-4xl font-black uppercase tracking-tight text-white leading-tight max-w-3xl">
+          <h1 className="max-w-4xl text-3xl font-black uppercase leading-tight tracking-tight text-white md:text-5xl" style={{ textShadow: '0 2px 18px rgba(0,0,0,.6)' }}>
             {game.title}
           </h1>
-          <p className="tl-term text-[15px] tl-muted mt-1">{game.developer}</p>
+          <p className="tl-term mt-1 text-[16px] text-pearl/80">
+            {[game.developer, releaseYear > 1970 ? String(releaseYear) : ''].filter(Boolean).join(' · ')}
+          </p>
         </div>
       </div>
 
-      {/* --- ТУЛБАР: ИГРАТЬ / СТАТЫ / ИКОНКИ --- */}
-      <div className="px-8 py-4 flex items-center gap-6 border-b border-[var(--line)] bg-[rgb(var(--accent-rgb)/.04)]">
-        {installed ? (
-          !installed.exePath ? (
-            <button
-              onClick={pickExe}
-              disabled={pickingExe}
-              title="Укажите exe игры, чтобы появился запуск"
-              className="tl-btn"
-            >
-              {pickingExe ? <Loader2 size={14} className="animate-spin" /> : <FolderSearch size={14} />}
-              Указать файл игры
-            </button>
+      {/* --- ПАНЕЛЬ ДЕЙСТВИЙ (на краю шапки) --- */}
+      <div className="relative z-10 -mt-[60px] px-8 max-md:px-4">
+        <div className="tl-panel flex flex-wrap items-center gap-x-8 gap-y-4 border-[var(--line-2)] bg-[var(--panel)]/92 p-4 backdrop-blur-xl">
+          {installed ? (
+            !installed.exePath ? (
+              <button onClick={pickExe} disabled={pickingExe} title="Укажите exe игры, чтобы появился запуск" className="tl-btn solid h-12 px-7 text-[12px]">
+                {pickingExe ? <Loader2 size={16} className="animate-spin" /> : <FolderSearch size={16} />}
+                Указать файл игры
+              </button>
+            ) : (
+              <button onClick={play} disabled={launching} className="tl-btn solid h-12 min-w-[180px] justify-center px-8 text-[13px]">
+                {launching ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} className="fill-current" />}
+                Играть
+              </button>
+            )
           ) : (
-            <button
-              onClick={play}
-              disabled={launching}
-              className="tl-btn solid"
-            >
-              {launching ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} className="fill-current" />}
-              Играть
-            </button>
-          )
-        ) : (
-          <button
-            onClick={install}
-            disabled={installing}
-            className="tl-btn solid"
-          >
-            {installing ? <Loader2 size={14} className="animate-spin" /> : <MonitorSmartphone size={14} />}
-            {installing ? 'Добавление...' : 'Установить'}
-          </button>
-        )}
+            bgInstall ? (
+              <button
+                disabled
+                title="Установка идёт в фоне. Если открылись окна установщика (проверка файлов, DirectX, Visual C++) — завершите их."
+                className="tl-btn solid h-12 min-w-[180px] cursor-not-allowed justify-center px-8 text-[13px] opacity-60"
+              >
+                <Loader2 size={16} className="animate-spin" /> Идёт установка
+              </button>
+            ) : (
+              <button onClick={install} disabled={installing} className="tl-btn solid h-12 min-w-[180px] justify-center px-8 text-[13px]">
+                {installing ? <Loader2 size={16} className="animate-spin" /> : <MonitorSmartphone size={16} />}
+                {installing ? 'Добавление…' : 'Установить'}
+              </button>
+            )
+          )}
 
-        {!installed && (
-          <button type="button" onClick={() => setVirusCheckOpen(true)} className="tl-btn ghost" title="Что нашёл Защитник Windows у игроков, которые уже скачали игру">
-            <ShieldCheck size={14} /> Проверить на вирусы
-          </button>
-        )}
+          <div className="grid min-w-0 flex-1 grid-cols-3 gap-6 max-lg:order-last max-lg:basis-full max-sm:grid-cols-2">
+            <StatTile label="Наиграно" value={playtimeText} />
+            <StatTile label="Последний запуск" value={formatDateTime(lastPlayedTs || undefined)} />
+            <StatTile label="В библиотеке с" value={formatDate(addedAt)} />
+          </div>
 
-        {installError && (
-          <span className="tl-chip nsfw">
-            {installError}
-          </span>
-        )}
-
-        {/* Статистика */}
-        <GameStatsPanel
-          installed={installed}
-          lastLaunch={formatDateTime(lastPlayedTs || undefined)}
-          playtime={formatPlaytime(Math.max(libPlaytime, installed?.playtimeMs || 0))}
-          addedAt={formatDate(addedAt)}
-        />
-
-        {/* Иконки справа */}
-        <GameActionsMenu
-          installed={installed}
-          favorite={favorite}
-          shortcutMsg={shortcutMsg}
-          menuRef={menuRef}
-          menuOpen={menuOpen}
-          submenuOpen={submenuOpen}
-          setMenuOpen={setMenuOpen}
-          setSubmenuOpen={setSubmenuOpen}
-          onToggleFavorite={toggleFavorite}
-          onPickExe={pickExe}
-          onCreateShortcut={createShortcut}
-          onReveal={reveal}
-          onUninstall={uninstall}
-          onOpenStore={() => navigate(`/games/${game.ID}`)}
-        />
-      </div>
-
-      {/* --- ТАБЫ --- */}
-      <div className="px-8 pt-5">
-        <div className="tl-tabs">
-          <button className="tl-tab active">
-            Обзор
-          </button>
-          <button
-            onClick={() => navigate(`/games/${game.ID}`)}
-            className="tl-tab"
-          >
-            Страница в магазине
-          </button>
-          <button
-            onClick={() => navigate('/downloads')}
-            className="tl-tab"
-          >
-            Загрузки
-          </button>
+          <div className="flex items-center gap-2">
+            {!installed && (
+              <button type="button" onClick={() => setVirusCheckOpen(true)} className="tl-btn ghost" title="Что нашёл Защитник Windows у игроков, которые уже скачали игру">
+                <ShieldCheck size={14} /> Проверить на вирусы
+              </button>
+            )}
+            <GameActionsMenu
+              installed={installed}
+              favorite={favorite}
+              shortcutMsg={shortcutMsg}
+              menuRef={menuRef}
+              menuOpen={menuOpen}
+              submenuOpen={submenuOpen}
+              setMenuOpen={setMenuOpen}
+              setSubmenuOpen={setSubmenuOpen}
+              onToggleFavorite={toggleFavorite}
+              onPickExe={pickExe}
+              onCreateShortcut={createShortcut}
+              onReveal={reveal}
+              onUninstall={uninstall}
+              onOpenStore={() => navigate(`/games/${game.ID}`)}
+            />
+          </div>
         </div>
+        {installError && <p className="tl-term mt-2 text-[15px] text-[#ff5b8a]">{installError}</p>}
+        {bgInstall && !installed && (
+          <p className="tl-term mt-2 text-[15px] text-[var(--muted)]">
+            Игра устанавливается в фоне. Если установщик открыл свои окна (проверка файлов, DirectX, Visual C++) — завершите их, после этого появится кнопка «Играть».
+          </p>
+        )}
       </div>
 
       {/* --- КОНТЕНТ --- */}
-      <div className="px-8 pt-6 flex gap-8 items-start">
-        {/* Левая колонка */}
-        <div className="flex-1 min-w-0">
-          {game.about_game && (
-            <section className="mb-8">
-              <div className="tl-sec-head">
-                <span className="bar" />
-                <h2>Об игре</h2>
-                <span className="line" />
-              </div>
-              <div className="game-content text-[13px] tl-muted leading-relaxed" dangerouslySetInnerHTML={{ __html: safeHtml(game.about_game) }} />
-            </section>
-          )}
-          {game.description && (
-            <section>
-              <div className="tl-sec-head">
-                <span className="bar" />
-                <h2>Описание</h2>
-                <span className="line" />
-              </div>
-              <div className="game-content text-[13px] tl-muted leading-relaxed" dangerouslySetInnerHTML={{ __html: safeHtml(game.description) }} />
-            </section>
-          )}
-          {!game.about_game && !game.description && (
-            <p className="tl-head text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--muted-2)]">Нет описания</p>
-          )}
+      <div className="flex items-start gap-8 px-8 pt-8 max-lg:flex-col max-md:px-4">
+        <div className="min-w-0 flex-1 max-lg:w-full">
+          <ScreenshotStrip media={media} />
+          <AboutSection game={game} />
         </div>
 
-        {/* Правая колонка */}
-        <div className="w-72 shrink-0 flex flex-col gap-5">
-        <div className="tl-panel p-5">
-          <div className="tl-sec-head">
-            <span className="bar" />
-            <h2>Об игре</h2>
-            <span className="line" />
-          </div>
-          <div>
-            {game.developer && (
-              <div className="tl-srow">
-                <span className="k flex items-center gap-2">
-                  <Building2 size={13} className="text-accent shrink-0" />
-                  Разработчик
-                </span>
-                <span className="v text-right truncate max-w-[60%]">{game.developer}</span>
-              </div>
-            )}
-            {game.publisher && (
-              <div className="tl-srow">
-                <span className="k flex items-center gap-2">
-                  <Building2 size={13} className="text-accent shrink-0" />
-                  Издатель
-                </span>
-                <span className="v text-right truncate max-w-[60%]">{game.publisher}</span>
-              </div>
-            )}
-            {game.release_date && (
-              <div className="tl-srow">
-                <span className="k flex items-center gap-2">
-                  <Calendar size={13} className="text-accent shrink-0" />
-                  Дата выхода
-                </span>
-                <span className="v text-right truncate max-w-[60%]">{formatDate(game.release_date)}</span>
-              </div>
-            )}
-            {game.age_rating && (
-              <div className="tl-srow">
-                <span className="k flex items-center gap-2">
-                  <Shield size={13} className="text-accent shrink-0" />
-                  Возрастной рейтинг
-                </span>
-                <span className="v text-right">{game.age_rating}+</span>
-              </div>
-            )}
-            <div className="tl-srow">
-              <span className="k flex items-center gap-2">
-                <Clock size={13} className="text-accent shrink-0" />
-                Последний запуск
-              </span>
-              <span className="v text-right truncate max-w-[60%]">{formatDateTime(lastPlayedTs || undefined)}</span>
-            </div>
-            <div className="tl-srow">
-              <span className="k flex items-center gap-2">
-                <Clock size={13} className="text-accent shrink-0" />
-                Наиграно
-              </span>
-              <span className="v text-right">{formatPlaytime(Math.max(libPlaytime, installed?.playtimeMs || 0))}</span>
-            </div>
-            {game.tags?.length > 0 && (
-              <div className="pt-3 mt-1 border-t border-[var(--line)]">
-                <div className="flex items-center gap-2 mb-2">
-                  <Tag size={13} className="text-accent" />
-                  <p className="tl-head text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--muted)]">Метки</p>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {game.tags.map(t => (
-                    <span key={t.id} className="tl-chip common">
-                      {t.name}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-        {installed && <GameTranslatePanel installedId={installed.id} gameId={Number(id)} />}
-        {installed && <CloudSavesPanel gameId={Number(id)} gameDir={installed.installPath} />}
+        <div className="flex w-80 shrink-0 flex-col gap-5 max-lg:w-full">
+          <InstallPanel
+            installed={installed}
+            onReveal={reveal}
+            onPickExe={pickExe}
+            onCreateShortcut={createShortcut}
+            onUninstall={uninstall}
+            onInstall={install}
+            installing={installing}
+            shortcutMsg={shortcutMsg}
+          />
+          {installed && <CloudSavesPanel gameId={Number(id)} gameDir={installed.installPath} />}
+          {installed && <GameTranslatePanel installedId={installed.id} gameId={Number(id)} />}
+          <InfoPanel game={game} releaseDate={formatDate(game.release_date)} onOpenStore={() => navigate(`/games/${game.ID}`)} />
         </div>
       </div>
 

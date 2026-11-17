@@ -2,7 +2,7 @@
 // после запуска игры поллинг процессов; пока процесс жив — playtimeMs растёт в реестре
 const { spawn } = require('node:child_process')
 const path = require('node:path')
-const { loadRegistry, saveRegistry } = require('./installer.cjs')
+const { loadRegistry, saveRegistry, isGameExe } = require('./installer.cjs')
 
 const TICK_MS = 15000
 const tracked = new Map()
@@ -54,9 +54,30 @@ function isGameRunning(proc, g) {
     if (g.installPath && pPath.startsWith(g.installPath)) return true
     return pPath === g.exePath
   }
-  // путь недоступен (повышенный процесс) — сверяем имя
-  return (proc.name || '').toLowerCase() === g.exeBase
+  // путь недоступен (повышенный процесс) — сверяем имя (ProcessName приходит без «.exe»)
+  return `${(proc.name || '').toLowerCase()}.exe` === g.exeBase
 }
+
+const norm = (p) => String(p || '').toLowerCase().replace(/[\\/]+$/, '')
+
+/**
+ * Процесс — установленная игра, запущенная в обход лаунчера (ярлык, exe из папки)?
+ * Строже, чем при уже идущем учёте: exe игры или другой exe из её папки, но не утилита
+ * (деинсталлятор, обработчик сбоев, redist — isGameExe отсекает их).
+ */
+function isGameProcess(proc, entry) {
+  const exePath = norm(entry.exePath)
+  const installPath = norm(entry.installPath)
+  const exeBase = path.basename(exePath)
+  const pPath = norm(proc.path)
+  if (pPath) {
+    if (pPath === exePath) return true
+    return !!installPath && pPath.startsWith(installPath + path.sep) && isGameExe(pPath)
+  }
+  return !!exeBase && `${(proc.name || '').toLowerCase()}.exe` === exeBase
+}
+
+const isTracked = (id) => tracked.has(id)
 
 function accumulate(id, deltaMs) {
   try {
@@ -88,4 +109,4 @@ async function tick() {
   }
 }
 
-module.exports = { track }
+module.exports = { track, isTracked, listProcesses, isGameProcess }

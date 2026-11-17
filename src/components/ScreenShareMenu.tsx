@@ -62,7 +62,7 @@ export default function ScreenShareMenu({
       <div
         ref={menuRef}
         style={{ left: pos?.left ?? 0, bottom: pos?.bottom ?? 0, visibility: pos ? 'visible' : 'hidden' }}
-        className="fixed z-[140] w-72 rounded-xl border border-white/10 bg-[#0d0a16]/98 backdrop-blur-xl shadow-2xl shadow-black/60 p-1.5"
+        className="fixed z-[140] w-72 border border-[var(--line-2)] bg-[var(--panel2)] shadow-[0_0_24px_rgb(var(--accent-rgb)/.25)] p-1.5"
         onClick={(e) => e.stopPropagation()}
       >
         <button type="button" onClick={onStop} className={`${rowClass} text-red-400 hover:text-red-300`}>
@@ -90,7 +90,7 @@ export default function ScreenShareMenu({
           </button>
 
           {qualityOpen && (
-            <div className="absolute right-full top-0 mr-1 w-64 rounded-xl border border-white/10 bg-[#0d0a16]/98 backdrop-blur-xl shadow-2xl shadow-black/60 p-1.5">
+            <div className="absolute right-full top-0 mr-1 w-64 border border-[var(--line-2)] bg-[var(--panel2)] shadow-[0_0_24px_rgb(var(--accent-rgb)/.25)] p-1.5">
               {(['sd', 'hd'] as const).map((q) => {
                 const preset = QUALITY_PRESETS[q];
                 const locked = q === 'hd' && !canHd;
@@ -100,7 +100,7 @@ export default function ScreenShareMenu({
                     key={q}
                     type="button"
                     onClick={() => onQuality(q)}
-                    className={`w-full flex items-center gap-3 px-2.5 py-2 text-left rounded-lg transition-colors ${
+                    className={`w-full flex items-center gap-3 px-2.5 py-2 text-left transition-colors ${
                       active ? 'bg-[rgb(var(--accent-rgb)/.12)] text-white' : 'text-pearl/75 hover:bg-white/[0.06] hover:text-white'
                     }`}
                   >
@@ -130,7 +130,7 @@ export default function ScreenShareMenu({
             type="checkbox"
             checked={shareAudio}
             onChange={(e) => onToggleShareAudio(e.target.checked)}
-            className="w-4 h-4 accent-[color:var(--color-accent)] cursor-pointer"
+            className="tl-check"
           />
         </label>
 

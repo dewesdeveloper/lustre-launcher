@@ -14,7 +14,7 @@ export const StorageGameRow = ({ game, selected, onToggle, thumb }: StorageGameR
       type="checkbox"
       checked={selected}
       onChange={() => onToggle(game.id)}
-      className="w-4 h-4 accent-[color:var(--color-accent)] cursor-pointer shrink-0"
+      className="tl-check"
     />
     <div className="w-24 h-14 overflow-hidden bg-[#0b0912] border border-[var(--line)] shrink-0 flex items-center justify-center">
       {thumb

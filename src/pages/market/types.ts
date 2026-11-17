@@ -112,6 +112,8 @@ export interface InstalledGame {
 
 export interface InstallProgress {
   gameId: string;
+  /** id игры в каталоге (если известен) */
+  catalogId?: number;
   phase: string;
   percent: number;
   /** установка setup.exe без мастера */

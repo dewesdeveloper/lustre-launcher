@@ -276,7 +276,7 @@ function CreateModal({ onClose, onCreate }: {
       />
       <label className="flex items-center gap-2 tl-term text-[15px] tl-muted cursor-pointer mb-5">
         <input type="checkbox" checked={isPublic} onChange={e => setIsPublic(e.target.checked)}
-          className="accent-[color:var(--color-accent)] cursor-pointer" />
+          className="tl-check" />
         Публичная коллекция (видна всем)
       </label>
       <div className="flex gap-2">
@@ -325,7 +325,7 @@ function EditModal({ col, onClose, onSave }: {
       />
       <label className="flex items-center gap-2 tl-term text-[15px] tl-muted cursor-pointer mb-5">
         <input type="checkbox" checked={isPublic} onChange={e => setIsPublic(e.target.checked)}
-          className="accent-[color:var(--color-accent)] cursor-pointer" />
+          className="tl-check" />
         Публичная коллекция (видна всем)
       </label>
       <div className="flex gap-2">

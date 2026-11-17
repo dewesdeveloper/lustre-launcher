@@ -15,6 +15,7 @@ import hosts from './hosts.cjs'
 import defender from './defender.cjs'
 import torrentScrape from './torrentScrape.cjs'
 import cloudSaves from './cloudSaves.cjs'
+import uninstallEntry from './uninstallEntry.cjs'
 import { File as MegaFile } from 'megajs'
 
 const { autoUpdater } = electronUpdater
@@ -1538,12 +1539,25 @@ async function checkFreeSpace(source, targetDir, factor) {
 }
 
 const installingIds = new Set()
+// Идущие установки: последнее состояние каждой. Страницы загрузок и игры спрашивают его при
+// открытии (install-status) — раньше после перехода между страницами состояние терялось,
+// и кнопка «Установить» снова становилась доступной, хотя установщик ещё работал.
+const installStatus = new Map()
 
 function sendInstallProgress(payload) {
+  const id = payload?.gameId
+  if (id) {
+    const merged = { ...(installStatus.get(id) || {}), ...payload }
+    if (payload.phase === 'idle' || payload.phase === 'done') installStatus.delete(id)
+    else installStatus.set(id, merged)
+    payload = merged // catalogId из ранних событий доходит и до поздних
+  }
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('install-progress', payload)
   }
 }
+
+ipcMain.handle('install-status', () => [...installStatus.values()])
 
 // Установка игры. Вынесена в отдельную функцию, чтобы обёртка могла
 // отслеживать занятость лаунчера (нельзя предлагать перезапуск под обновление,
@@ -1593,6 +1607,9 @@ async function installGameImpl(gameId, opts = {}) {
   // Проверка Защитником Windows до распаковки. Итог (без самих файлов) уходит в каталог,
   // чтобы другие игроки видели его до скачивания. Найдена угроза — установка останавливается,
   // а продолжить игрок может сам (opts.skipScan).
+  // установка началась: запоминаем, к какой игре каталога она относится
+  installStatus.set(gameId, { ...(installStatus.get(gameId) || {}), gameId, catalogId, phase: 'install', percent: -1 })
+
   if (!opts.skipScan) {
     sendInstallProgress({ gameId, catalogId, phase: 'scan', percent: -1 })
     const [scan, sha256] = await Promise.all([defender.scanPath(contentPath), defender.sha256File(contentPath)])
@@ -1891,6 +1908,8 @@ ipcMain.handle('install-game', async (e, gameId, opts) => {
     return { error: 'Установка прервалась: ' + (err?.message || err) }
   } finally {
     installingIds.delete(gameId)
+    // установка с мастером (phase 'installer') продолжается вне лаунчера — её состояние оставляем
+    if (installStatus.get(gameId)?.phase !== 'installer') installStatus.delete(gameId)
     activeInstalls--
     maybeInstallUpdate() // установка закончилась — можно ставить обновление
   }
@@ -1954,20 +1973,47 @@ ipcMain.handle('launch-game', async (e, id) => {
     }
   }
   const res = await launchInstalledGame(entry)
-  if (res?.ok && entry) {
-    registerGame({ ...entry, lastPlayedAt: Date.now() })
-    // Учёт времени игры: process-watcher растит playtimeMs, пока процесс жив
-    playtime.track({ ...entry, lastPlayedAt: Date.now() }, () => {
-      // игра закрылась — сообщим рендереру (сброс статуса «Играет в …» + отчёт сессии)
-      try { mainWindow?.webContents.send('game-state', { running: false, name: entry.name, id: entry.id, catalogId: entry.catalogId || 0 }) } catch {}
-      onGameExited(entry)
-    })
-    // запущена — статус «Играет в …» для друзей + начало отсчёта сессии
-    try { mainWindow?.webContents.send('game-state', { running: true, name: entry.name, id: entry.id, catalogId: entry.catalogId || 0 }) } catch {}
-    onGameStarted(entry)
-  }
+  if (res?.ok && entry) startGameSession(entry)
   return res
 })
+
+// Игра запущена (кнопкой «Играть» или в обход лаунчера): учёт времени, статус «Играет в …», события
+function startGameSession(entry) {
+  if (!entry || playtime.isTracked(entry.id)) return
+  registerGame({ ...entry, lastPlayedAt: Date.now() })
+  // Учёт времени игры: process-watcher растит playtimeMs, пока процесс жив
+  playtime.track({ ...entry, lastPlayedAt: Date.now() }, () => {
+    // игра закрылась — сообщим рендереру (сброс статуса «Играет в …» + отчёт сессии)
+    try { mainWindow?.webContents.send('game-state', { running: false, name: entry.name, id: entry.id, catalogId: entry.catalogId || 0 }) } catch {}
+    onGameExited(entry)
+  })
+  // запущена — статус «Играет в …» для друзей + начало отсчёта сессии
+  try { mainWindow?.webContents.send('game-state', { running: true, name: entry.name, id: entry.id, catalogId: entry.catalogId || 0 }) } catch {}
+  onGameStarted(entry)
+}
+
+// Игры, запущенные в обход лаунчера (ярлык на рабочем столе, exe из папки): раз в 30 секунд
+// смотрим список процессов и, если там exe установленной игры, считаем время и статус «В игре»
+// так же, как после кнопки «Играть».
+const EXTERNAL_GAME_SCAN_MS = 30_000
+let externalScanBusy = false
+async function scanExternalGameLaunches() {
+  if (externalScanBusy) return
+  const games = loadRegistry().filter((g) => g.exePath && !playtime.isTracked(g.id))
+  if (games.length === 0) return
+  externalScanBusy = true
+  try {
+    const procs = await playtime.listProcesses()
+    for (const g of games) {
+      if (procs.some((p) => playtime.isGameProcess(p, g))) {
+        console.log('[Playtime] игра запущена не из лаунчера:', g.name)
+        startGameSession(g)
+      }
+    }
+  } catch { /* список процессов недоступен — попробуем в следующий раз */ } finally {
+    externalScanBusy = false
+  }
+}
 // ==========================================================
 
 // --- Облачные сохранения (логика «когда и что синхронизировать» — в рендерере, src/api/cloudSaves.ts) ---
@@ -2058,11 +2104,23 @@ function canDeleteInstallPath(entry) {
 ipcMain.handle('uninstall-game', async (e, id) => {
   const entry = loadRegistry().find(g => g.id === id)
   const removable = canDeleteInstallPath(entry)
+  // Игра, поставленная своим установщиком, записана в «Установленные приложения» Windows:
+  // запускаем её деинсталлятор и убираем запись, иначе там остаётся игра без файлов
+  let uninstallLeft = 0
+  if (removable && fs.existsSync(entry.installPath)) {
+    try {
+      const res = await uninstallEntry.removeUninstallEntries(entry.installPath)
+      uninstallLeft = res.cancelled ? 1 : (res.left || 0)
+    } catch (err) {
+      console.warn('[Uninstall] запись Windows не убрана:', err?.message || err)
+    }
+  }
   if (removable) await fs.promises.rm(entry.installPath, { recursive: true, force: true }).catch(() => {})
   // Установщик так и не закончили: убираем установочные файлы
   if (entry?.sourcePath) await dropDownload(id, entry.sourcePath)
   removeGameEntry(id)
   // Файлы игры, поставленной своим установщиком, остаются: удалять их нужно её деинсталлятором
+  if (uninstallLeft > 0) return { ok: true, uninstallEntryLeft: true }
   return removable || !entry?.installPath ? { ok: true } : { ok: true, keptFiles: true, path: entry.installPath }
 })
 ipcMain.handle('reveal-game', (e, id) => {
@@ -2393,6 +2451,18 @@ async function installDownloadedUpdate() {
   // Как у Steam: лаунчер стоит в Program Files (x86), а папка открыта на запись — кладём новую версию
   // сами, без установщика и окна запроса прав администратора
   if (updateDownloaded.file && sevenZip && !loadAppPaths().selfUpdateBroken && selfUpdate.canSelfUpdate(installDir)) {
+    // Частичная загрузка следующего обновления (blockmap) берёт неизменённые блоки из копии
+    // текущего установщика в кэше (…-updater/installer.exe). Её обновляет только NSIS-установщик,
+    // а самообновление его не запускает: в кэше оставался установщик старой версии, блоки не
+    // сходились — и каждое обновление качалось целиком (~150 МБ вместо нескольких).
+    try {
+      const cacheDir = path.dirname(path.dirname(updateDownloaded.file)) // …-updater/pending/<файл> → …-updater
+      if (path.basename(path.dirname(updateDownloaded.file)) === 'pending') {
+        fs.copyFileSync(updateDownloaded.file, path.join(cacheDir, 'installer.exe'))
+      }
+    } catch (err) {
+      console.warn('[Update] не удалось обновить кэш установщика для частичных обновлений:', err?.message || err)
+    }
     try {
       const staging = path.join(selfUpdate.defaultWorkDir(), `v${updateDownloaded.version}`)
       await selfUpdate.extractAppPayload(updateDownloaded.file, staging, sevenZip, exeName)
@@ -2428,9 +2498,36 @@ function githubUpdateFeed() {
     : { provider: 'github', owner: 'dewesdeveloper', repo: 'lustre-launcher' }
 }
 
+// После самообновления установщик текущей версии остаётся в …-updater/pending, а кэш для
+// частичных обновлений (installer.exe) — от старой версии. Кладём текущий установщик в кэш,
+// чтобы следующее обновление скачивало только изменившиеся блоки.
+function syncUpdaterInstallerCache() {
+  try {
+    const cacheDir = path.join(process.env.LOCALAPPDATA || path.join(app.getPath('home'), 'AppData', 'Local'), 'lustre-frontend-updater')
+    const pending = path.join(cacheDir, 'pending')
+    const info = JSON.parse(fs.readFileSync(path.join(pending, 'update-info.json'), 'utf8'))
+    const file = path.join(pending, path.basename(String(info?.fileName || '')))
+    if (!info?.fileName || !fs.existsSync(file)) return
+    if (!String(info.fileName).includes(app.getVersion())) return // не установленная версия — не трогаем
+    const cached = path.join(cacheDir, 'installer.exe')
+    const st = fs.statSync(file)
+    const cst = fs.existsSync(cached) ? fs.statSync(cached) : null
+    if (!cst || cst.size !== st.size) {
+      // переносим, а не копируем: установщик уже установленной версии в pending больше не нужен,
+      // а держать две одинаковые копии по ~150 МБ незачем
+      try { fs.renameSync(file, cached) } catch { fs.copyFileSync(file, cached) }
+      console.log('[Update] кэш установщика для частичных обновлений обновлён до', app.getVersion())
+    }
+    // установленная версия больше не «ожидает установки»: убираем её из pending
+    fs.rmSync(file, { force: true })
+    fs.rmSync(path.join(pending, 'update-info.json'), { force: true })
+  } catch { /* кэша нет или формат другой — обновление просто скачается целиком */ }
+}
+
 function initAutoUpdates() {
   if (!app.isPackaged) return
   checkSelfUpdateResult()
+  syncUpdaterInstallerCache()
   if (buildFlavor() === 'staff') {
     autoUpdater.channel = 'staff'
     autoUpdater.allowDowngrade = false // установка channel включает его, откат версии не нужен
@@ -3134,6 +3231,9 @@ function installDisplayMediaHandler(ses) {
 
 // --- APP ---
 app.whenReady().then(() => {
+  // игры, запущенные ярлыком или из папки, тоже учитываются (scanExternalGameLaunches)
+  setTimeout(() => { void scanExternalGameLaunches() }, 15_000)
+  setInterval(() => { void scanExternalGameLaunches() }, EXTERNAL_GAME_SCAN_MS)
   // Свои папки скачивания и установки больше не выбираются: переводим их на выбор диска
   try { migrateCustomPaths() } catch (err) { console.error('[Main] перенос настроек путей:', err) }
   // Локальный сервер перевода для Unity-игр (XUnity.AutoTranslator шлёт сюда тексты во время игры).

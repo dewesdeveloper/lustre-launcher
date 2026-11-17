@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, Loader2, ShieldCheck, ShieldQuestion, X } from 'lucide-react';
-import { getScanSummary, sourceKeyFor, type ScanSourceSummary } from '../../../api/scanReports';
+import { getScanSummary, isPuaOnly, sourceKeyFor, type ScanSourceSummary } from '../../../api/scanReports';
 import type { DownloadSource } from '../../market/components/SourcePickerModal';
 
 const KIND_LABEL: Record<string, string> = {
@@ -21,17 +21,28 @@ function Verdict({ s }: { s?: ScanSourceSummary }) {
       </p>
     );
   }
+  const named = s.threats.filter((t) => !/^unknown$/i.test(t));
+  const threats = named.length ? named : s.threats;
+  const pua = isPuaOnly(s.threats);
   return (
     <div className="space-y-1">
-      {s.threat_users > 0 && (
+      {s.threat_users > 0 && (pua ? (
+        <p className="flex items-start gap-2 tl-term text-[14px] text-amber-300">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+          <span>
+            Защитник отметил нежелательную программу (не вирус) у {s.threat_users} {s.threat_users === 1 ? 'игрока' : 'игроков'}:{' '}
+            <span className="text-white">{threats.join(', ')}</span>. Обычно это упаковщик кряка или установщика.
+          </span>
+        </p>
+      ) : (
         <p className="flex items-start gap-2 tl-term text-[14px] text-[#ff8fab]">
           <AlertTriangle size={15} className="mt-0.5 shrink-0" />
           <span>
             Защитник нашёл угрозы у {s.threat_users} {s.threat_users === 1 ? 'игрока' : 'игроков'}
-            {s.threats.length > 0 && <>: <span className="text-white">{s.threats.join(', ')}</span></>}
+            {threats.length > 0 && <>: <span className="text-white">{threats.join(', ')}</span></>}
           </span>
         </p>
-      )}
+      ))}
       {s.clean_users > 0 && (
         <p className="flex items-start gap-2 tl-term text-[14px] text-[var(--green2)]">
           <ShieldCheck size={15} className="mt-0.5 shrink-0" />

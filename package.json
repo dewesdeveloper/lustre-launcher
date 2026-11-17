@@ -2,7 +2,7 @@
   "name": "lustre-frontend",
   "productName": "Lustre",
   "private": true,
-  "version": "0.1.12",
+  "version": "0.1.13",
   "releaseName": "Public 0.1.8",
   "license": "GPL-3.0-or-later",
   "author": "DewesDeveloper",

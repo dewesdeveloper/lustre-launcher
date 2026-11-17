@@ -21,6 +21,10 @@ import { EMPTY_EXTRA, extraActive, extraChips, matchExtra, sourceKinds, type Ext
 
 type TagInfo = { name: string; category: string };
 
+// Каталог на время сеанса: повторное открытие магазина — мгновенно, без перекачивания всего списка
+const CATALOG_TTL_MS = 10 * 60 * 1000;
+let catalogCache: { games: any[]; total: number; langs: string[]; tags: TagInfo[]; at: number } | null = null;
+
 export const GameCatalog: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -102,38 +106,20 @@ export const GameCatalog: React.FC = () => {
 
     const PAGE = 100;
     const CONCURRENCY = 3; // одновременных фоновых чанков
-    const FLUSH_MS = 300;  // интервал батч-коммита
 
     const langs = new Set<string>();
     const collectLangs = (list: any[]) => {
       list.forEach((g: any) => g.languages?.forEach((l: any) => l?.name && langs.add(l.name)));
     };
-
-    // Буфер фоновых чанков: в стейт кладём не чаще раза в FLUSH_MS
-    let buffer: any[] = [];
-    let flushTimer: ReturnType<typeof setTimeout> | null = null;
-    const flush = () => {
-      if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-      if (cancelled || buffer.length === 0) return;
-      const add = buffer;
-      buffer = [];
-      // дубликаты возможны, если каталог изменился между запросами страниц
-      setGames((prev) => {
-        const seen = new Set(prev.map((g) => g.ID));
-        return [...prev, ...add.filter((g) => !seen.has(g.ID))];
-      });
-      setAllLanguages(Array.from(langs).sort((a, b) => titleCollator.compare(a, b)));
-    };
-    const scheduleFlush = () => {
-      if (flushTimer === null) flushTimer = setTimeout(flush, FLUSH_MS);
-    };
+    const sortedLangs = () => Array.from(langs).sort((a, b) => titleCollator.compare(a, b));
 
     // Страница каталога с повторами: на нестабильной сети запрос иногда обрывается,
-    // и раньше такая страница (до 100 игр) молча пропадала из каталога
+    // и раньше такая страница (до 100 игр) молча пропадала из каталога.
+    // view=catalog — облегчённые карточки (без magnet-ссылок, полного описания и требований).
     const fetchPage = async (offset: number) => {
       for (let attempt = 0; ; attempt++) {
         try {
-          return await api.get('/games/', { params: { limit: PAGE, offset, sort: 'added-new' }, signal });
+          return await api.get('/games/', { params: { limit: PAGE, offset, sort: 'added-new', view: 'catalog' }, signal });
         } catch (err) {
           if (cancelled || signal.aborted || attempt >= 2) throw err;
           await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
@@ -142,6 +128,15 @@ export const GameCatalog: React.FC = () => {
     };
 
     const load = async () => {
+      // свежий каталог из этого сеанса — показываем сразу
+      if (catalogCache && Date.now() - catalogCache.at < CATALOG_TTL_MS && reloadKey === 0) {
+        setGames(catalogCache.games);
+        setTotalCount(catalogCache.total);
+        setAllLanguages(catalogCache.langs);
+        setTags(catalogCache.tags);
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       setLoadError(false);
       setIncomplete(false);
@@ -153,41 +148,51 @@ export const GameCatalog: React.FC = () => {
         if (cancelled) return;
         const firstChunk: any[] = Array.isArray(firstRes.data) ? firstRes.data : [];
         const total = Number(firstRes.headers?.['x-total-count']) || firstChunk.length;
+        const tagList: TagInfo[] = ((tagsRes.data || []) as any[])
+          .map((t) => ({ name: t.name as string, category: (t.category as string) || 'regular' }))
+          .sort((a, b) => titleCollator.compare(a.name, b.name));
         setTotalCount(total);
         setGames(firstChunk);
         collectLangs(firstChunk);
-        setAllLanguages(Array.from(langs).sort((a, b) => titleCollator.compare(a, b)));
-        setTags(((tagsRes.data || []) as any[])
-          .map((t) => ({ name: t.name as string, category: (t.category as string) || 'regular' }))
-          .sort((a, b) => titleCollator.compare(a.name, b.name)));
+        setAllLanguages(sortedLangs());
+        setTags(tagList);
         setLoading(false);
 
-        // Фоновая догрузка остальных страниц параллельными чанками
+        // Остальные страницы — в фоне, а в список кладём один раз, когда пришли все:
+        // раньше каждая порция перестраивала уже открытую страницу, и игры менялись на глазах
         const offsets: number[] = [];
         for (let o = PAGE; o < total; o += PAGE) offsets.push(o);
-        if (offsets.length === 0) return;
-        setLoadingMore(true);
-
-        let failed = false;
-        const worker = async () => {
-          while (!cancelled && offsets.length > 0) {
-            const offset = offsets.shift() as number;
-            try {
-              const res = await fetchPage(offset);
-              const chunk: any[] = Array.isArray(res.data) ? res.data : [];
-              if (chunk.length === 0) return;
-              collectLangs(chunk);
-              buffer.push(...chunk);
-              scheduleFlush();
-            } catch {
-              if (cancelled || signal.aborted) return;
-              failed = true; // страница не загрузилась и после повторов — берём следующую
+        const chunks = new Map<number, any[]>([[0, firstChunk]]);
+        if (offsets.length > 0) {
+          setLoadingMore(true);
+          let failed = false;
+          const queue = [...offsets];
+          const worker = async () => {
+            while (!cancelled && queue.length > 0) {
+              const offset = queue.shift() as number;
+              try {
+                const res = await fetchPage(offset);
+                const chunk: any[] = Array.isArray(res.data) ? res.data : [];
+                collectLangs(chunk);
+                chunks.set(offset, chunk);
+              } catch {
+                if (cancelled || signal.aborted) return;
+                failed = true; // страница не загрузилась и после повторов — берём следующую
+              }
             }
-          }
-        };
-        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, offsets.length) }, () => worker()));
-        flush();
-        if (failed && !cancelled) setIncomplete(true);
+          };
+          await Promise.all(Array.from({ length: Math.min(CONCURRENCY, offsets.length) }, () => worker()));
+          if (cancelled) return;
+          if (failed) setIncomplete(true);
+        }
+        // порядок — как на сервере (по смещению); дубликаты возможны, если каталог менялся между запросами
+        const seen = new Set<number>();
+        const all = [...chunks.keys()].sort((a, b) => a - b).flatMap((o) => chunks.get(o) || [])
+          .filter((g) => (seen.has(g.ID) ? false : (seen.add(g.ID), true)));
+        const langList = sortedLangs();
+        setGames(all);
+        setAllLanguages(langList);
+        catalogCache = { games: all, total, langs: langList, tags: tagList, at: Date.now() };
       } catch (err) {
         if (cancelled) return;
         console.error('Failed to load catalog:', err);
@@ -205,8 +210,6 @@ export const GameCatalog: React.FC = () => {
     return () => {
       cancelled = true;
       controller.abort();
-      if (flushTimer) clearTimeout(flushTimer);
-      buffer = [];
     };
   }, [reloadKey]);
 
@@ -344,7 +347,12 @@ export const GameCatalog: React.FC = () => {
   );
   const hiddenAdult = matchedGames.length - filteredGames.length;
 
-  const totalPages = Math.max(1, Math.ceil(filteredGames.length / pageSize));
+  const loadedPages = Math.max(1, Math.ceil(filteredGames.length / pageSize));
+  // Пока каталог догружается, номера страниц считаем по полному числу игр, а открытую страницу,
+  // до которой список ещё не дошёл, не подменяем последней загруженной — показываем «Загружаем…»
+  const totalPages = loadingMore && !hasFilters && totalCount
+    ? Math.max(loadedPages, Math.ceil(totalCount / pageSize))
+    : loadedPages;
   const currentPage = Math.min(page, totalPages);
   const pagedGames = useMemo(
     () => filteredGames.slice((currentPage - 1) * pageSize, currentPage * pageSize),

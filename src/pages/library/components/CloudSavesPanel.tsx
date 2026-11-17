@@ -203,7 +203,7 @@ export default function CloudSavesPanel({ gameId, gameDir }: { gameId: number; g
 
           {info?.enabled && (
             <label className="mt-4 flex cursor-pointer items-center gap-2.5">
-              <input type="checkbox" checked={auto} onChange={toggleAuto} className="accent-[var(--pink)]" />
+              <input type="checkbox" checked={auto} onChange={toggleAuto} className="tl-check" />
               <span className="tl-term text-[14px] text-pearl/80">Синхронизировать автоматически</span>
             </label>
           )}

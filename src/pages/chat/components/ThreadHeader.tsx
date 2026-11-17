@@ -52,6 +52,8 @@ interface HeaderProps {
 
 export function ThreadHeader({ ctl, searchOpen, infoOpen, onToggleSearch, onToggleInfo, onCall }: HeaderProps) {
   const item = ctl.activeItem;
+  // хук — до раннего выхода: иначе при выборе диалога меняется число хуков и React падает
+  const muted = useChatMuted(item && item.ref.kind !== 'group' ? item.peerId : null);
   if (!item) return null;
   const isGroup = item.ref.kind === 'group';
   const typing = ctl.typing[item.key];
@@ -59,7 +61,6 @@ export function ThreadHeader({ ctl, searchOpen, infoOpen, onToggleSearch, onTogg
   const playing = item.peerId ? ctl.playing.get(item.peerId) : undefined;
   const members = ctl.thread?.members ?? [];
   const onlineCount = members.filter((m) => m.id === ctl.myId || ctl.onlineIds.has(m.id)).length;
-  const muted = useChatMuted(isGroup ? null : item.peerId);
 
   let status: React.ReactNode;
   if (typing) {

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ShieldAlert } from 'lucide-react';
+import { isPuaOnly } from '../../../api/scanReports';
 
 // Слово, которое нужно ввести вручную (как имя репозитория при удалении на GitHub):
 // случайный клик или Enter не должны ставить игру, в которой Защитник нашёл угрозу.
@@ -18,6 +19,7 @@ export default function ThreatInstallDialog({ gameName, threats, onCancel, onCon
   const [typed, setTyped] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const ready = understood && typed.trim() === CONFIRM_WORD;
+  const pua = isPuaOnly(threats);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel(); };
@@ -31,7 +33,7 @@ export default function ThreatInstallDialog({ gameName, threats, onCancel, onCon
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="threat-title"
-        className="w-full max-w-[460px] select-none border border-red-500/50 bg-[var(--panel)] shadow-[0_0_36px_rgba(239,68,68,.25)]"
+        className={`w-full max-w-[460px] select-none border bg-[var(--panel)] ${pua ? 'border-amber-400/60 shadow-[0_0_36px_rgba(251,191,36,.22)]' : 'border-red-500/50 shadow-[0_0_36px_rgba(239,68,68,.25)]'}`}
         onClick={(e) => e.stopPropagation()}
         // слово нужно набрать руками: текст окна нельзя выделить, скопировать, вырезать или перетащить
         onCopy={(e) => e.preventDefault()}
@@ -40,15 +42,22 @@ export default function ThreatInstallDialog({ gameName, threats, onCancel, onCon
         onContextMenu={(e) => e.preventDefault()}
       >
         <div className="flex gap-4 p-6">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center border border-red-500/50 bg-red-500/10 text-red-400">
+          <span className={`flex h-10 w-10 shrink-0 items-center justify-center border ${pua ? 'border-amber-400/60 bg-amber-400/10 text-amber-300' : 'border-red-500/50 bg-red-500/10 text-red-400'}`}>
             <ShieldAlert size={20} />
           </span>
           <div className="min-w-0">
-            <h3 id="threat-title" className="tl-head text-[11px] font-bold uppercase tracking-[0.15em] text-white">Защитник Windows нашёл угрозу</h3>
+            <h3 id="threat-title" className="tl-head text-[11px] font-bold uppercase tracking-[0.15em] text-white">
+              {pua ? 'Защитник Windows нашёл нежелательную программу' : 'Защитник Windows нашёл угрозу'}
+            </h3>
             <p className="tl-term mt-1.5 text-[15px] leading-relaxed text-pearl/75">
               В скачанных файлах игры «{gameName}» обнаружено:{' '}
-              <span className="break-words text-red-300">{threats.length ? threats.join(', ') : 'угроза без названия'}</span>.
+              <span className={`break-words ${pua ? 'text-amber-300' : 'text-red-300'}`}>{threats.length ? threats.join(', ') : 'угроза без названия'}</span>.
             </p>
+            {pua && (
+              <p className="tl-term mt-2 text-[14px] leading-relaxed text-amber-200/80">
+                PUA — не вирус: так Защитник отмечает упаковщики и утилиты, которыми часто собраны кряки и установщики репаков.
+              </p>
+            )}
             <p className="tl-term mt-2 text-[14px] leading-relaxed text-[var(--muted)]">
               Файлы не удалены и не помещены в карантин. Антивирусы иногда ошибаются на репаках, но устанавливайте игру,
               только если доверяете источнику.
@@ -62,7 +71,7 @@ export default function ThreatInstallDialog({ gameName, threats, onCancel, onCon
               type="checkbox"
               checked={understood}
               onChange={(e) => { setUnderstood(e.target.checked); if (e.target.checked) setTimeout(() => inputRef.current?.focus(), 0); }}
-              className="mt-0.5 accent-red-500"
+              className="tl-check mt-1"
             />
             <span className="tl-term text-[14px] leading-snug text-pearl/85">
               Я понимаю риск и устанавливаю игру под свою ответственность

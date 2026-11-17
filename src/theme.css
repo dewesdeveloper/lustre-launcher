@@ -297,7 +297,7 @@
 /* ---------- фильтры ---------- */
 .tl-fopt { display: flex; align-items: center; gap: 10px; padding: 7px 0; font-size: 13px; color: var(--muted); cursor: pointer; }
 .tl-fopt input { accent-color: var(--pink); }
-.tl-fopt input[type="checkbox"] {
+.tl-fopt input[type="checkbox"], input[type="checkbox"].tl-check {
   appearance: none;
   -webkit-appearance: none;
   width: 14px;
@@ -309,25 +309,26 @@
   cursor: pointer;
   transition: border-color .14s, background .14s, box-shadow .14s;
 }
-.tl-fopt input[type="checkbox"]:hover { border-color: var(--pink); }
-.tl-fopt input[type="checkbox"]:checked {
+.tl-fopt input[type="checkbox"]:hover, input[type="checkbox"].tl-check:hover { border-color: var(--pink); }
+.tl-fopt input[type="checkbox"]:checked, input[type="checkbox"].tl-check:checked {
   border-color: var(--pink);
   background: rgb(var(--accent-rgb) / .12);
   box-shadow: var(--glow-sm);
 }
-.tl-fopt input[type="checkbox"]:checked::after {
+.tl-fopt input[type="checkbox"]:checked::after, input[type="checkbox"].tl-check:checked::after {
   content: '';
   position: absolute;
   inset: 3px;
   background: var(--pink);
   box-shadow: var(--glow-sm);
 }
-.tl-fopt input[type="checkbox"]:focus-visible {
+.tl-fopt input[type="checkbox"]:focus-visible, input[type="checkbox"].tl-check:focus-visible {
   outline: 1px solid var(--pink);
   outline-offset: 2px;
 }
 .tl-fopt input[type="checkbox"]:checked ~ span:last-child { color: #fff; }
 .tl-fopt:hover { color: #fff; }
+input[type="checkbox"].tl-check:disabled { opacity: .45; cursor: not-allowed; }
 
 /* ---------- тумблеры ---------- */
 .tl-tog { display: flex; align-items: center; gap: 12px; padding: 12px 14px; cursor: pointer; border: 1px solid var(--line); background: rgb(var(--accent-rgb) /.03); transition: .14s; }

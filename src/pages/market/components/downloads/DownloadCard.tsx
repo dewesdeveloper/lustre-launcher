@@ -62,6 +62,16 @@ const DownloadCard = ({ dl, onPause, onResume, onRemove, onOpenGame, onInstall, 
               <PackageOpen size={13} /> Установить
             </button>
           )}
+          {dl.status === 'completed' && installing && (
+            <button
+              type="button"
+              disabled
+              title="Установка идёт в фоне. Если открылись окна установщика (проверка файлов, DirectX, Visual C++) — завершите их."
+              className="tl-btn solid !py-1.5 cursor-not-allowed opacity-60"
+            >
+              <Loader2 size={13} className="animate-spin" /> Идёт установка
+            </button>
+          )}
           {active && (
             <button type="button" onClick={() => onPause(dl.id)} className="tl-btn ghost !px-2 !py-1.5" title="Пауза" aria-label="Пауза">
               <Pause size={13} />
@@ -133,6 +143,11 @@ const DownloadCard = ({ dl, onPause, onResume, onRemove, onOpenGame, onInstall, 
               <span className="ml-auto tl-head text-[10px] text-white">{installState!.percent}%</span>
             )}
           </div>
+          {installState!.silent && (
+            <p className="mt-1.5 tl-term text-[14px] text-[var(--muted)]">
+              Установщик может открыть свои окна: проверку файлов, DirectX, Visual C++. Завершите их — после этого появится кнопка «Играть».
+            </p>
+          )}
           {installState!.phase === 'install' && installState!.percent >= 0 && (
             <div className="mt-2 h-1.5 bg-white/5 border border-[var(--line)] overflow-hidden">
               <div className="h-full bg-[var(--cyan,#22d3ee)] transition-all duration-300" style={{ width: `${installState!.percent}%` }} />
