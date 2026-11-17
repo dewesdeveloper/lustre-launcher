@@ -18,7 +18,7 @@ const os = require('node:os')
 
 const POLL_MS = 4000
 const MAX_FILE_BYTES = 4 * 1024 * 1024
-const GAME_DIR_DEPTH = 5
+const GAME_DIR_DEPTH = 8 // папки игр на Unreal глубокие (Engine/Binaries/ThirdParty/…)
 const GAME_DIR_MAX_DIRS = 3000
 
 function bases() {

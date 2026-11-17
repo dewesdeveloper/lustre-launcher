@@ -12,7 +12,8 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { spawn } = require('node:child_process')
 
-const MAX_DEPTH = 5
+// у игр на Unreal steam_api64.dll лежит в Engine/Binaries/ThirdParty/Steamworks/SteamvNNN/Win64 — 6-й уровень
+const MAX_DEPTH = 9
 const MAX_ENTRIES = 20000
 
 const STEAM_API_RE = /^steam_api(64)?\.dll$/i

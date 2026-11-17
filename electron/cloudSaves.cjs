@@ -185,6 +185,30 @@ function guessDirs(vars, title, developer) {
   return found.map(narrowGuess)
 }
 
+/**
+ * Игры на Unreal Engine: проект определяется по файлам игры (<Проект>/Binaries/Win64/<Проект>-Win64-Shipping.exe
+ * или <Проект>.exe рядом с папкой Engine), сохранения — в %LOCALAPPDATA%\<Проект>\Saved\SaveGames.
+ */
+function unrealSaveDirs(vars, gameDir) {
+  if (!gameDir) return []
+  const projects = new Set()
+  for (const name of subdirs(gameDir)) {
+    // папка проекта: в ней Binaries/Win64 с *-Shipping.exe
+    const bin = path.join(gameDir, name, 'Binaries', 'Win64')
+    try {
+      if (fs.readdirSync(bin).some((n) => /-Win64-Shipping\.exe$/i.test(n))) projects.add(name)
+    } catch { /* не проект */ }
+  }
+  const out = []
+  for (const p of projects) {
+    const saved = path.join(vars.LOCALAPPDATA, p, 'Saved')
+    for (const d of [path.join(saved, 'SaveGames'), saved]) {
+      try { if (fs.statSync(d).isDirectory()) { out.push(d); break } } catch { /* нет папки */ }
+    }
+  }
+  return out
+}
+
 /** Объединить несколько папок в один вариант (например, AppData\Local + AppData\Roaming) */
 function combine(list, source) {
   const withFiles = list.filter((c) => c.files > 0)
@@ -238,7 +262,9 @@ function locate(app, { patterns = [], gameDir = '', appId = '', override = '', t
   const emulator = candidates.filter((c) => c.source === 'emulator' && c.files > 0).sort((a, b) => b.newest - a.newest)[0]
   if (emulator) return { best: emulator, candidates }
 
-  // путей нет (или они пусты) — пробуем угадать по названию
+  // путей нет (или они пусты) — игра на Unreal Engine: папка проекта из файлов игры
+  for (const d of unrealSaveDirs(vars, gameDir)) add(d, 'guess')
+  // и угадываем по названию
   if (title) for (const d of guessDirs(vars, title, developer)) add(d, 'guess')
   const guess = combine(candidates.filter((c) => c.source === 'guess'), 'guess')
   return { best: guess, candidates }

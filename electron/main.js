@@ -2087,21 +2087,25 @@ async function resolveCrack(target, roots) {
 function crackFields(crack) {
   if (!crack) return {}
   return {
-    ...(crack.status !== 'unknown' ? { crackChecked: true } : {}),
+    ...(crack.status !== 'unknown' ? { crackChecked: CRACK_CHECK_VERSION } : {}),
     ...(crack.status === 'steam-only' ? { crackMissing: true } : {}),
     ...(crack.status === 'choose' ? { crackOptions: crack.options } : {}),
     ...(crack.status === 'applied' ? { crackApplied: crack.label } : {}),
   }
 }
 
+// Версия проверки кряка: при изменении правил проверки — увеличить, и игры перепроверятся
+// (2 — проверка видит steam_api64.dll в глубоких папках игр на Unreal)
+const CRACK_CHECK_VERSION = 2
+
 // Разовая проверка кряка у игр, установленных тихо раньше (до появления проверки после установки)
 async function checkInstalledCracks() {
-  for (const g of loadRegistry().filter((x) => x.silent && x.exePath && x.installPath && !x.crackChecked)) {
+  for (const g of loadRegistry().filter((x) => x.exePath && x.installPath && x.crackChecked !== CRACK_CHECK_VERSION && !x.crackApplied)) {
     const res = await crackCheck.check(g.installPath).catch(() => ({ status: 'unknown' }))
     if (res.status === 'unknown') continue
     const cur = loadRegistry().find((x) => x.id === g.id)
     if (!cur) continue
-    registerGame({ ...cur, crackChecked: true, ...(res.status === 'steam-only' && !cur.crackDismissed ? { crackMissing: true } : {}) })
+    registerGame({ ...cur, crackChecked: CRACK_CHECK_VERSION, ...(res.status === 'steam-only' && !cur.crackDismissed ? { crackMissing: true } : {}) })
     if (res.status === 'steam-only') console.warn('[CrackCheck] без кряка:', g.name)
   }
 }
@@ -2229,7 +2233,7 @@ ipcMain.handle('install-apply-crack', async (e, id, optionId) => {
   const res = await crackApply.apply(option, entry.installPath, getBundled7z())
   if (!res.ok) return { error: 'Не удалось поставить кряк: ' + res.error }
   const { crackOptions: _o, crackMissing: _m, sourcePath, setupPath: _s, ...rest } = entry
-  registerGame({ ...rest, crackApplied: res.label, crackChecked: true })
+  registerGame({ ...rest, crackApplied: res.label, crackChecked: CRACK_CHECK_VERSION })
   // установка завершена — скачанные файлы больше не нужны
   if (sourcePath) await dropDownload(id, sourcePath)
   return { ok: true, label: res.label }
