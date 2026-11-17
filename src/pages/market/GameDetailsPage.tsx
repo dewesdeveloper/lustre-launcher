@@ -23,6 +23,7 @@ import { Loading } from '../../components/Loading';
 import { gameBannerUrl, gameBannerFallback, gameCoverUrl } from '../../utils/gameBanner';
 import { safeHtml } from '../../utils/safeHtml';
 import { applySeo, plainDescription } from '../../seo/seo';
+import { findInstalled } from '../../utils/installedMatch';
 import AchievementsSection from '../../components/achievements/AchievementsSection';
 import { hasAdmin } from '../../admin';
 
@@ -84,21 +85,9 @@ const GameDetailsPage: React.FC = () => {
     const electron = (window as any).electron;
     if (!electron?.installedGames || !game?.title) { setInstalled(null); return; }
 
-    const normalize = (s: string) => (s || '').toLowerCase().replace(/[^a-zа-я0-9]+/gi, ' ').trim();
-    const matchInstalled = (title: string, list: any[]) => {
-      const tokens = normalize(title).split(' ').filter(Boolean);
-      let best: any = null;
-      let bestScore = 0;
-      for (const g of list || []) {
-        const gTokens = new Set(normalize(g.name).split(' ').filter(Boolean));
-        const score = tokens.filter((t) => gTokens.has(t)).length;
-        if (score > bestScore) { best = g; bestScore = score; }
-      }
-      return best;
-    };
 
     const refresh = () => {
-      electron.installedGames().then((list: any[]) => setInstalled(matchInstalled(game.title, list || []))).catch(() => {});
+      electron.installedGames().then((list: any[]) => setInstalled(findInstalled(game.ID, game.title, list || []))).catch(() => {});
     };
     refresh();
 

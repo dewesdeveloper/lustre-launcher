@@ -28,9 +28,7 @@ import { reportRemoteInstall, type RemoteInstallState } from '../../api/remoteIn
 import { beforeLaunch } from '../../api/cloudSaves';
 import CloudSavesPanel from './components/CloudSavesPanel';
 import AchievementsSection from '../../components/achievements/AchievementsSection';
-
-const tokenize = (s: string) =>
-  new Set(s.toLowerCase().split(/[^a-z0-9а-яё]+/).filter(t => t.length >= 3));
+import { findInstalled } from '../../utils/installedMatch';
 
 const formatDate = (v?: string | number | null) => {
   if (!v) return '—';
@@ -94,23 +92,11 @@ export default function LibraryGamePage() {
     reportRemoteInstall(rid, status, err);
   };
 
-  const matchInstalled = useCallback((title: string, list: InstalledGame[]) => {
-    const tt = [...tokenize(title)];
-    let best: InstalledGame | null = null;
-    let bestScore = 0;
-    for (const g of list) {
-      const gt = tokenize(g.name);
-      const score = tt.filter(t => gt.has(t)).length;
-      if (score > bestScore) { best = g; bestScore = score; }
-    }
-    return best;
-  }, []);
-
   const refreshInstalled = useCallback(() => {
     electron?.installedGames?.().then((list: InstalledGame[]) => {
-      setInstalled(game ? matchInstalled(game.title, list || []) : null);
+      setInstalled(game ? findInstalled(game.ID ?? id, game.title, list || []) : null);
     });
-  }, [electron, game, matchInstalled]);
+  }, [electron, game, id]);
 
   useEffect(() => {
     const load = async () => {
@@ -311,7 +297,7 @@ export default function LibraryGamePage() {
     navigate(location.pathname, { replace: true, state: null });
     void (async () => {
       const list: InstalledGame[] = (await electron?.installedGames?.().catch(() => [])) || [];
-      if (matchInstalled(game.title, list)) {
+      if (findInstalled(game.ID ?? id, game.title, list)) {
         reportRemoteInstall(cmd.install_id, 'failed', 'Игра уже установлена на этом компьютере');
         return;
       }

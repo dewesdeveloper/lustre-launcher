@@ -13,6 +13,7 @@ import Pagination from '../../components/ui/Pagination';
 import { notifyLibraryChanged } from '../../utils/libraryEvents';
 import { formatPlaytime } from '../../utils/playtime';
 import { Loading } from '../../components/Loading';
+import { findInstalled } from '../../utils/installedMatch';
 
 const GRID_BY_SIZE: Record<string, string> = {
   auto: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4',
@@ -21,7 +22,6 @@ const GRID_BY_SIZE: Record<string, string> = {
   large: 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6',
 };
 
-const norm = (s?: string) => (s || '').toLowerCase().trim();
 
 export default function LibraryPage() {
   const navigate = useNavigate();
@@ -131,18 +131,9 @@ export default function LibraryPage() {
     }
   };
 
-  const matchesInstalled = (title?: string) => {
-    const t = norm(title);
-    if (!t) return false;
-    return installed.some(g => {
-      const n = norm(g.name);
-      return n === t || n.includes(t) || t.includes(n);
-    });
-  };
-
   const filtered = entries.filter(e => {
     if (filter === 'favorites' && !e.favorite) return false;
-    if (filter === 'installed' && !matchesInstalled(e.game?.title)) return false;
+    if (filter === 'installed' && !findInstalled(e.game?.ID ?? e.game_id, e.game?.title, installed)) return false;
     if (search.trim()) {
       const q = search.toLowerCase();
       return e.game?.title?.toLowerCase().includes(q);
@@ -169,7 +160,7 @@ export default function LibraryPage() {
   }
 
   const favoritesCount = entries.filter(e => e.favorite).length;
-  const installedCount = entries.filter(e => matchesInstalled(e.game?.title)).length;
+  const installedCount = entries.filter(e => findInstalled(e.game?.ID ?? e.game_id, e.game?.title, installed)).length;
   // Наиграно: время на аккаунте (сервер) или локальный учёт, что больше
   const serverPlaytimeMs = entries.reduce((sum, e) => sum + (e.playtime_ms || 0), 0);
   const localPlaytimeMs = installed.reduce((sum, g) => sum + (g.playtimeMs || 0), 0);

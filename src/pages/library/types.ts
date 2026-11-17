@@ -36,6 +36,8 @@ export interface InstalledGame {
   installedAt: number;
   lastPlayedAt?: number;
   playtimeMs?: number;
+  /** id игры в каталоге — сохраняется при установке через лаунчер */
+  catalogId?: number;
   /** тихая установка поставила версию для Steam без кряка (игра откроет магазин Steam) */
   crackMissing?: boolean;
   /** в раздаче несколько кряков — игрок выбирает, какой поставить */
