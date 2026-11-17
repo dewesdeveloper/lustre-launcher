@@ -17,6 +17,7 @@ export interface Comment {
       tags?: string;
       tag?: string;
       tag_color?: string;
+      verified?: boolean;
     };
   };
 }

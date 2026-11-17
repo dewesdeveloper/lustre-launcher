@@ -2,6 +2,7 @@ import type { MouseEvent, ReactNode } from 'react';
 import { IconLink, IconLock, IconTrash, IconUsers } from '@tabler/icons-react';
 import type { Community } from '../../../api/community';
 import { formatOf } from '../formats';
+import VerifiedBadge from '../../../components/VerifiedBadge';
 
 type CommunityCardItemProps = {
   community: Community;
@@ -88,7 +89,7 @@ export function CommunityCardItem({ community: c, isOwner, canDelete, onDelete, 
 
       <div className={`flex flex-1 flex-col p-5 text-left ${featured ? 'lg:justify-center lg:p-8' : ''}`}>
         {featured && <p className="tl-head mb-2 text-[10px] font-bold uppercase tracking-[.25em] text-accent">★ Самое большое сообщество</p>}
-        <h3 className={`tl-wrap line-clamp-1 font-black uppercase tracking-tight text-white transition-colors group-hover:text-accent ${featured ? 'text-2xl' : 'text-[15px]'}`}>{c.name}</h3>
+        <h3 className={`tl-wrap line-clamp-1 font-black uppercase tracking-tight text-white transition-colors group-hover:text-accent ${featured ? 'text-2xl' : 'text-[15px]'}`}>{c.name}{c.verified && <VerifiedBadge kind="community" size={featured ? 20 : 14} className="ml-1.5" />}</h3>
         {c.theme?.name && <p className="tl-head mt-1 text-[10px] font-bold uppercase tracking-[.18em] text-[var(--muted)]">{c.theme.name}</p>}
         <p className={`tl-wrap mt-3 text-pearl/70 ${featured ? 'line-clamp-4 text-sm' : 'line-clamp-2 min-h-[2.5em] text-xs'}`}>
           {c.description || 'Без описания'}

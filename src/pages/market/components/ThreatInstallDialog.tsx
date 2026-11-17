@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ShieldAlert } from 'lucide-react';
-import { isPuaOnly } from '../../../api/scanReports';
+import { softThreatKind } from '../../../api/scanReports';
 
 // Слово, которое нужно ввести вручную (как имя репозитория при удалении на GitHub):
 // случайный клик или Enter не должны ставить игру, в которой Защитник нашёл угрозу.
@@ -18,8 +18,10 @@ export default function ThreatInstallDialog({ gameName, threats, onCancel, onCon
   const [understood, setUnderstood] = useState(false);
   const [typed, setTyped] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
-  const ready = understood && typed.trim() === CONFIRM_WORD;
-  const pua = isPuaOnly(threats);
+  const soft = softThreatKind(threats);
+  // жёлтое окно: PUA или известные ложные срабатывания на кряки — без галочки и ввода слова
+  const pua = soft !== null;
+  const ready = pua || (understood && typed.trim() === CONFIRM_WORD);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel(); };
@@ -47,15 +49,21 @@ export default function ThreatInstallDialog({ gameName, threats, onCancel, onCon
           </span>
           <div className="min-w-0">
             <h3 id="threat-title" className="tl-head text-[11px] font-bold uppercase tracking-[0.15em] text-white">
-              {pua ? 'Защитник Windows нашёл нежелательную программу' : 'Защитник Windows нашёл угрозу'}
+              {soft === 'pua' ? 'Защитник Windows нашёл нежелательную программу' : soft === 'likely-fp' ? 'Защитник Windows отметил файлы кряка' : 'Защитник Windows нашёл угрозу'}
             </h3>
             <p className="tl-term mt-1.5 text-[15px] leading-relaxed text-pearl/75">
               В скачанных файлах игры «{gameName}» обнаружено:{' '}
               <span className={`break-words ${pua ? 'text-amber-300' : 'text-red-300'}`}>{threats.length ? threats.join(', ') : 'угроза без названия'}</span>.
             </p>
-            {pua && (
+            {soft === 'pua' && (
               <p className="tl-term mt-2 text-[14px] leading-relaxed text-amber-200/80">
                 PUA — не вирус: так Защитник отмечает упаковщики и утилиты, которыми часто собраны кряки и установщики репаков.
+              </p>
+            )}
+            {soft === 'likely-fp' && (
+              <p className="tl-term mt-2 text-[14px] leading-relaxed text-amber-200/80">
+                Скорее всего, это ложное срабатывание: эвристика Защитника (метка «!rfn») часто отмечает кряки,
+                которые подменяют файлы Steam. Если Защитник удалит файл после установки, игра может не запуститься.
               </p>
             )}
             <p className="tl-term mt-2 text-[14px] leading-relaxed text-[var(--muted)]">
@@ -65,7 +73,7 @@ export default function ThreatInstallDialog({ gameName, threats, onCancel, onCon
           </div>
         </div>
 
-        <div className="space-y-3 border-t border-[var(--line)] px-6 py-4">
+        {!pua && <div className="space-y-3 border-t border-[var(--line)] px-6 py-4">
           <label className="flex cursor-pointer items-start gap-2.5">
             <input
               type="checkbox"
@@ -95,7 +103,7 @@ export default function ThreatInstallDialog({ gameName, threats, onCancel, onCon
               className="tl-field w-full disabled:opacity-40"
             />
           </div>
-        </div>
+        </div>}
 
         <div className="flex gap-2 px-6 pb-6">
           <button type="button" onClick={onCancel} className="tl-btn ghost flex-1 justify-center">Отмена</button>
@@ -103,7 +111,7 @@ export default function ThreatInstallDialog({ gameName, threats, onCancel, onCon
             type="button"
             onClick={onConfirm}
             disabled={!ready}
-            className="tl-btn flex-1 justify-center border-red-500/60 bg-red-600 text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-red-600"
+            className={`tl-btn flex-1 justify-center disabled:cursor-not-allowed disabled:opacity-35 ${pua ? 'solid' : 'border-red-500/60 bg-red-600 text-white hover:bg-red-500 disabled:hover:bg-red-600'}`}
           >
             Установить
           </button>

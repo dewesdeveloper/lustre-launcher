@@ -362,6 +362,11 @@ export default function Login() {
           >
             Забыли пароль?
           </button>
+          {/* Вход через Google отключён (17.11.2026): у таких аккаунтов нет пароля — задают его через восстановление */}
+          <p className="mt-3 border border-[var(--line-2)] bg-[rgb(var(--accent-rgb)/.06)] px-3 py-2 text-xs leading-relaxed text-pearl/80">
+            <span className="font-bold text-accent">Входили через Google?</span> Этот способ входа отключён. Нажмите «Забыли пароль?»,
+            укажите свою почту Gmail и задайте пароль — аккаунт и прогресс сохранены.
+          </p>
         </div>
 
         <ConsentCheckboxes value={consent} onChange={setConsent} idPrefix="login" nudge={consentNudge} />

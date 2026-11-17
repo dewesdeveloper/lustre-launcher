@@ -1,6 +1,7 @@
 import { IconLock, IconUsers } from '@tabler/icons-react';
 import type { Community } from '../../../api/community';
 import { categoryLabel } from '../formats';
+import VerifiedBadge from '../../../components/VerifiedBadge';
 
 type CommunityDetailHeroProps = { community: Community; creatorName: string; creatorAvatar: string };
 
@@ -20,7 +21,10 @@ export default function CommunityDetailHero({ community: c, creatorName, creator
             {c.theme?.name && <span className="tl-chip rare">{c.theme.name}</span>}
             {c.is_private && <span className="tl-chip warn inline-flex items-center gap-1.5"><IconLock size={10} /> Приватное</span>}
           </div>
-          <h1 className="tl-wrap text-[28px] leading-tight text-white" style={{ textShadow: 'var(--glow)' }}>{c.name}</h1>
+          <h1 className="tl-wrap flex items-center gap-2.5 text-[28px] leading-tight text-white" style={{ textShadow: 'var(--glow)' }}>
+            {c.name}
+            {c.verified && <VerifiedBadge kind="community" size={24} />}
+          </h1>
           {c.description && <p className="tl-wrap tl-muted mt-2 max-w-2xl text-[13px] leading-relaxed">{c.description}</p>}
         </div>
       </div>

@@ -3,6 +3,7 @@ import { IconChevronRight, IconMessage2, IconTrash } from '@tabler/icons-react';
 import ProBadge, { PRO_NICK_CLASS } from '../../../components/ProBadge';
 import { UserAvatarHover } from '../../../components/UserAvatarHover';
 import type { CommunityPost } from '../../../api/community';
+import VerifiedBadge from '../../../components/VerifiedBadge';
 
 type PostCardProps = {
   post: CommunityPost;
@@ -37,6 +38,7 @@ export default function PostCard({ post, canDelete, onDelete, onOpen, commentsCo
           <header className="flex items-center gap-3">
             {pro && <ProBadge />}
             <span className={`tl-head text-[10px] font-bold uppercase ${pro ? PRO_NICK_CLASS : 'text-[var(--muted)]'}`}>{name}</span>
+            {author?.profile?.verified && <VerifiedBadge size={12} />}
             {date && <time className="tl-term text-[15px] text-[var(--muted-2)]">{date}</time>}
           </header>
           <h3 className="tl-wrap tl-head mt-2 text-[13px] font-bold uppercase text-white transition-colors group-hover:text-accent">{post.title}</h3>

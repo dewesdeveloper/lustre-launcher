@@ -20,6 +20,7 @@ import { Loading } from '../../components/Loading';
 import ImageOr from '../../components/ImageOr';
 import BadgeEmblem from '../../components/BadgeEmblem';
 import LevelEmblem from '../../components/LevelEmblem';
+import OfficialLinks from '../../components/OfficialLinks';
 
 interface FriendEntry {
   id: number;
@@ -409,6 +410,7 @@ export default function Home() {
 
       <footer className="tl-footer">
         <div className="status">SYSTEM STATUS: <b>ONLINE</b><br />WELCOME BACK.EXE</div>
+        <OfficialLinks />
         <div className="left">
           <span className="keep">LUSTRE HOME</span>
           <div className="tl-barcode">

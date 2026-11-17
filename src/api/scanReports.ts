@@ -32,6 +32,30 @@ export function isPuaOnly(threats: string[]): boolean {
   return named.length > 0 && named.every((t) => /^PUA:/i.test(t));
 }
 
+/**
+ * Находки Защитника, которые на кряках почти всегда ложные: эвристика «!rfn» без описания
+ * у Microsoft, срабатывает на подменённые steam_api и exe. Установку не блокируем — мягкое окно.
+ * Дополнять по отчётам в админке («Угрозы»), когда у других игроков те же файлы чистые.
+ */
+const LIKELY_FALSE_POSITIVES = [
+  /^Trojan:Win32\/Kepavll!rfn$/i,
+  /^Trojan:Win32\/Pomal!rfn$/i,
+];
+
+export const isLikelyFalsePositive = (threat: string) => LIKELY_FALSE_POSITIVES.some((re) => re.test(threat.trim()));
+
+/**
+ * Насколько строго показывать находки: 'pua' — только нежелательные программы,
+ * 'likely-fp' — только известные ложные срабатывания на кряки (и PUA), null — настоящая угроза.
+ */
+export function softThreatKind(threats: string[]): 'pua' | 'likely-fp' | null {
+  const named = threats.filter((t) => !/^unknown$/i.test(t.trim()));
+  if (named.length === 0) return null;
+  if (named.every((t) => /^PUA:/i.test(t))) return 'pua';
+  if (named.every((t) => /^PUA:/i.test(t) || isLikelyFalsePositive(t))) return 'likely-fp';
+  return null;
+}
+
 type SourceLike ={ kind?: string; magnet_uri?: string; url?: string };
 
 const BASE32 = 'abcdefghijklmnopqrstuvwxyz234567';

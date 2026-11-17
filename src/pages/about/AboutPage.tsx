@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode }
 import { Link } from 'react-router-dom';
 import api from '../../api';
 import { DOWNLOAD_ANDROID_URL, DOWNLOAD_WINDOWS_URL } from '../../utils/downloads';
+import OfficialLinks from '../../components/OfficialLinks';
 import './about.css';
 
 /* ============================================================
@@ -662,6 +663,7 @@ export default function AboutPage() {
         {/* ==================== FOOTER ==================== */}
         <footer className="ab-footer">
           <div className="status">SYSTEM STATUS: <b>ONLINE</b><br />LAUNCHER · WINDOWS / WEB / ANDROID SOON</div>
+          <OfficialLinks />
           <div className="keep">KEEP GOING.EXE</div>
         </footer>
       </div>

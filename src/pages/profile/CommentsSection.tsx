@@ -5,6 +5,7 @@ import { IconSend, IconTrash, IconHeart, IconHeartFilled, IconCornerDownRight, I
 import { UserAvatarHover } from '../../components/UserAvatarHover';
 import ProBadge, { PRO_NICK_CLASS } from '../../components/ProBadge';
 import CharCounter from '../../components/CharCounter';
+import VerifiedBadge from '../../components/VerifiedBadge';
 import {
   getWallComments, postWallComment, toggleCommentLike, deleteWallComment,
   type WallComment,
@@ -108,6 +109,7 @@ export default function CommentsSection({ profileId, canDelete = false }: { prof
             <span className={`truncate ${c.author?.profile?.is_pro ? PRO_NICK_CLASS : ''}`}>
               {c.author?.profile?.display_name || c.author?.username}
             </span>
+            {c.author?.profile?.verified && <VerifiedBadge size={12} />}
           </span>
           <div className="flex items-center gap-3 shrink-0">
             <span className="tl-term text-[14px] text-[var(--muted-2)]">

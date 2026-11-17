@@ -5,6 +5,7 @@ import RankPlate from '../../../components/RankPlate';
 import ProBadge, { PRO_NICK_CLASS } from '../../../components/ProBadge';
 import type { ProfileTheme } from '../../../components/profileThemes';
 import { type FriendState, type ProfileTag, levelProgress } from '../constants';
+import VerifiedBadge from '../../../components/VerifiedBadge';
 
 type ProfileHeaderProps = {
   profile: any;
@@ -101,6 +102,7 @@ export default function ProfileHeader({
               >
                 {profile?.display_name || 'Новый игрок'}
               </span>
+              {profile?.verified && <VerifiedBadge size={18} />}
               {profile?.is_pro && <ProBadge size="md" />}
             </h1>
 

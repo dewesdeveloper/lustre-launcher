@@ -41,7 +41,7 @@ export interface WallComment {
   author: {
     id: number;
     username: string;
-    profile?: { avatar_url?: string; display_name?: string; is_pro?: boolean };
+    profile?: { avatar_url?: string; display_name?: string; is_pro?: boolean; verified?: boolean };
   };
 }
 

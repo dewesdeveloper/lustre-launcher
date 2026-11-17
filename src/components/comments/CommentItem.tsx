@@ -4,6 +4,7 @@ import type { Comment } from './types';
 import { UserAvatarHover } from '../UserAvatarHover';
 import AvatarFrame from '../AvatarFrame';
 import { parseTags } from '../../pages/profile/constants';
+import VerifiedBadge from '../../components/VerifiedBadge';
 
 interface CommentItemProps {
   comment: Comment;
@@ -53,6 +54,7 @@ export const CommentItem = ({ comment, canDelete, onDelete }: CommentItemProps) 
               <span className={profile?.is_pro ? PRO_NICK_CLASS : undefined}>
                 {profile?.display_name || comment.author?.username || 'Аноним'}
               </span>
+              {profile?.verified && <VerifiedBadge size={12} />}
             </span>
             {visibleTitles.map((t) => {
               const color = t.color || '#FF006E';

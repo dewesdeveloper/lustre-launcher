@@ -27,6 +27,8 @@ export type CommunityCreator = {
     frame_id?: string;
     avatar_frame_scale?: number;
     is_pro?: boolean;
+    /** галочка официального аккаунта */
+    verified?: boolean;
   };
 };
 
@@ -42,6 +44,8 @@ export type Community = {
   description: string;
   cover_url: string;
   is_private: boolean;
+  /** галочка официального сообщества */
+  verified?: boolean;
   invite_code?: string;
   format?: CommunityFormat;
   game_id: number | null;

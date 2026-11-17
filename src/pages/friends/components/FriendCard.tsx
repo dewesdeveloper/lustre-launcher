@@ -4,6 +4,7 @@ import { IconMessage, IconUserMinus, IconPlayerPlay, IconClock } from '@tabler/i
 import { usePresence, presenceLabel } from '../../../api/presence';
 import ProBadge, { PRO_NICK_CLASS } from '../../../components/ProBadge';
 import { UserAvatarHover } from '../../../components/UserAvatarHover';
+import VerifiedBadge from '../../../components/VerifiedBadge';
 
 // Живой статус друга: «В сети» / «Играет в …» / «Не в сети»
 export const PresenceLine = ({ id }: { id: number }) => {
@@ -70,6 +71,7 @@ export const FriendCard = ({ friend: f, onOpenProfile, onMessage, onCall, onRemo
             <span className={`tl-head text-[11px] font-bold uppercase tracking-[.1em] truncate ${profile.is_pro ? PRO_NICK_CLASS : 'text-white'}`}>
               {profile.display_name}
             </span>
+            {profile.verified && <VerifiedBadge size={12} />}
           </span>
           <span className="block tl-term text-[15px] text-[var(--muted-2)] truncate">
             @{f.friend_details.username}

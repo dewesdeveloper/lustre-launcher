@@ -11,6 +11,7 @@ import CharCounter from '../../components/CharCounter';
 import { useDialog } from '../../components/Dialogs';
 import { useAuth } from '../../context/AuthContext';
 import { canModerate } from '../../utils/roles';
+import VerifiedBadge from '../../components/VerifiedBadge';
 
 const REPLY_MAX = 2000;
 const avatarOf = (author: CommunityCreator | undefined, fallbackId: number) =>
@@ -24,6 +25,7 @@ function AuthorName({ author, className = '' }: { author?: CommunityCreator; cla
     <>
       {pro && <ProBadge />}
       <span className={`${className} ${pro ? PRO_NICK_CLASS : ''}`}>{nameOf(author)}</span>
+      {author?.profile?.verified && <VerifiedBadge size={12} />}
     </>
   );
 }
