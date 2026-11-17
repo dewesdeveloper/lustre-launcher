@@ -108,6 +108,12 @@ export interface InstalledGame {
   exePath: string | null;
   kind: string;
   installedAt: number;
+  /** тихая установка поставила версию для Steam без кряка (игра откроет магазин Steam) */
+  crackMissing?: boolean;
+  /** в раздаче несколько кряков — игрок выбирает, какой поставить */
+  crackOptions?: { id: string; label: string; path: string; kind: 'dir' | 'archive' }[];
+  /** кряк, поставленный лаунчером из раздачи */
+  crackApplied?: string;
 }
 
 export interface InstallProgress {

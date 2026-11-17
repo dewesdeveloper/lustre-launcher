@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bell, Camera, Gamepad2, Keyboard, MessageSquare, Phone, UserPlus, Users, X } from 'lucide-react';
+import { Bell, Camera, Gamepad2, Keyboard, MessageSquare, Phone, Trophy, UserPlus, Users, X } from 'lucide-react';
 import { useTransparentBackground } from './OverlayPage';
 
-type ToastKind = 'hint' | 'notify' | 'screenshot' | 'message' | 'group' | 'friend' | 'game' | 'call';
+type ToastKind = 'hint' | 'notify' | 'screenshot' | 'message' | 'group' | 'friend' | 'game' | 'call' | 'achievement';
 type Toast = { id: number; kind?: ToastKind; title: string; body?: string; thumb?: string; icon?: string; payload?: unknown };
 
 const LIFETIME_MS = 6000;
@@ -10,7 +10,7 @@ const MAX_TOASTS = 4;
 
 const KIND_ICON: Record<ToastKind, typeof Bell> = {
   hint: Keyboard, notify: Bell, screenshot: Camera, message: MessageSquare,
-  group: Users, friend: UserPlus, game: Gamepad2, call: Phone,
+  group: Users, friend: UserPlus, game: Gamepad2, call: Phone, achievement: Trophy,
 };
 
 /**
@@ -82,11 +82,11 @@ export default function OverlayToastsPage() {
             }}
             className={`group relative w-full flex items-center gap-3 p-3 pr-8 pointer-events-auto border border-[var(--line-2)] bg-[rgba(12,8,19,0.97)] shadow-[0_8px_30px_rgba(0,0,0,0.6)] animate-[lhToastIn_.25s_ease-out] ${clickable ? 'cursor-pointer hover:border-[rgb(var(--accent-rgb)/.6)]' : ''}`}
           >
-            <span className="absolute left-0 top-0 bottom-0 w-[3px] bg-[var(--pink)]" />
+            <span className={`absolute left-0 top-0 bottom-0 w-[3px] ${t.kind === 'achievement' ? 'bg-amber-300 shadow-[0_0_10px_rgba(252,211,77,.6)]' : 'bg-[var(--pink)]'}`} />
             {t.thumb ? (
               <img src={t.thumb} alt="" className="w-20 aspect-video object-cover border border-white/15 shrink-0" />
             ) : t.icon ? (
-              <img src={t.icon} alt="" className="w-12 h-12 object-cover shrink-0 border border-white/10" />
+              <img src={t.icon} alt="" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} className="w-12 h-12 object-cover shrink-0 border border-white/10" />
             ) : (
               <div className="w-12 h-12 shrink-0 flex items-center justify-center bg-[rgb(var(--accent-rgb)/.18)] text-[var(--pink)]">
                 <Icon size={20} />

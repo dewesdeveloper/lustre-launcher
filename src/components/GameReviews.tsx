@@ -59,6 +59,10 @@ const GameReviews = ({ gameId }: Props) => {
       setRatingAttention((n) => n + 1);
       return;
     }
+    if (!myContent.trim()) {
+      setError('Напишите текст отзыва: что понравилось или не понравилось в игре');
+      return;
+    }
     setSubmitting(true);
     setError('');
     try {

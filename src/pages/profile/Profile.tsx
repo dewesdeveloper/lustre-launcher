@@ -8,6 +8,7 @@ import api from '../../api';
 import { IconLock } from '@tabler/icons-react';
 import CommentsSection from './CommentsSection';
 import { ProfileShowcase } from './ProfileShowcase';
+import ProfileAchievementsBlock from './components/ProfileAchievementsBlock';
 import { useDialog } from '../../components/Dialogs';
 import { PROFILE_THEMES, isCustomThemeId, parseCustomThemeId } from '../../components/profileThemes';
 import type { ShopItem } from '../../api/shop';
@@ -277,6 +278,10 @@ export default function ProfilePage() {
 
                     {viewedUser && (
                       <SocialBlock userId={viewedUser.id} isOwnProfile={isOwnProfile} />
+                    )}
+
+                    {viewedUser && (
+                      <ProfileAchievementsBlock userId={viewedUser.id} onGameClick={(gameId) => navigate(`/games/${gameId}`)} />
                     )}
 
                     <ProfileBadgesBlock

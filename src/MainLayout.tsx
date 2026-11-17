@@ -36,6 +36,8 @@ import { initRemoteInstall } from './api/remoteInstall';
 import { initFriendActivity } from './api/friendActivity';
 import { useWeakGpuPrompt } from './utils/weakGpu';
 import { afterGameExit } from './api/cloudSaves';
+import { listenAchievementUnlocks } from './api/achievements';
+import FirstRunStorageModal from './components/FirstRunStorageModal';
 
 export default function MainLayout({ children }: { children?: ReactNode }) {
   const { user } = useAuth();
@@ -283,6 +285,9 @@ export default function MainLayout({ children }: { children?: ReactNode }) {
     };
   }, []);
 
+  // Достижения, открытые во время игры: лаунчер следит за файлом эмулятора, здесь — на сервер и уведомление
+  useEffect(() => (user?.id ? listenAchievementUnlocks() : undefined), [user?.id]);
+
   // Голосовые каналы сообществ (как в Discord): присутствие и подключение живут в главном окне
   useEffect(() => { if (user?.id) initVoiceChannels(user.id); }, [user?.id]);
 
@@ -354,6 +359,8 @@ export default function MainLayout({ children }: { children?: ReactNode }) {
         <SidebarGames />
         <VoiceConnectedBar />
         <VoiceInviteToast />
+        {/* первый запуск: где хранить игры (один раз, см. FirstRunStorageModal) */}
+        {isElectron && user?.id ? <FirstRunStorageModal /> : null}
 
         <main ref={mainRef} className="flex-1 overflow-y-auto custom-scrollbar relative">
 

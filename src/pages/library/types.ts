@@ -36,6 +36,12 @@ export interface InstalledGame {
   installedAt: number;
   lastPlayedAt?: number;
   playtimeMs?: number;
+  /** тихая установка поставила версию для Steam без кряка (игра откроет магазин Steam) */
+  crackMissing?: boolean;
+  /** в раздаче несколько кряков — игрок выбирает, какой поставить */
+  crackOptions?: { id: string; label: string; path: string; kind: 'dir' | 'archive' }[];
+  /** кряк, поставленный лаунчером из раздачи */
+  crackApplied?: string;
 }
 
 export interface Tag { id: number; name: string }

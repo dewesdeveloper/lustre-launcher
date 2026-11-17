@@ -119,6 +119,16 @@ contextBridge.exposeInMainWorld('electron', {
   torrentRemove: (opts) => ipcRenderer.invoke('torrent-remove', opts),
   torrentList: () => ipcRenderer.invoke('torrent-list'),
   torrentHealth: (magnets) => ipcRenderer.invoke('torrent-health', magnets),
+  // Достижения Steam из файлов эмулятора в репаке
+  achievements: {
+    read: (args) => ipcRenderer.invoke('achievements-read', args),
+    bind: (args) => ipcRenderer.invoke('achievements-bind', args),
+    onUnlocked: (cb) => {
+      const h = (_e, data) => cb(data)
+      ipcRenderer.on('achievements-unlocked', h)
+      return () => ipcRenderer.removeListener('achievements-unlocked', h)
+    },
+  },
   // Облачные сохранения игр
   cloudSaves: {
     locate: (opts) => ipcRenderer.invoke('cloud-saves-locate', opts),
@@ -169,6 +179,10 @@ contextBridge.exposeInMainWorld('electron', {
   appPathsGet: () => ipcRenderer.invoke('paths:get'),
   appPathsSet: (patch) => ipcRenderer.invoke('paths:set', patch),
   uninstallGame: (id) => ipcRenderer.invoke('uninstall-game', id),
+  // после тихой установки не нашлось кряка: переустановить с мастером репака или оставить как есть
+  reinstallWithWizard: (id) => ipcRenderer.invoke('install-reinstall-wizard', id),
+  crackDismiss: (id) => ipcRenderer.invoke('install-crack-dismiss', id),
+  applyCrack: (id, optionId) => ipcRenderer.invoke('install-apply-crack', id, optionId),
   revealGame: (id) => ipcRenderer.invoke('reveal-game', id),
   storageScan: (force) => ipcRenderer.invoke('storage-scan', force),
   diskSpace: () => ipcRenderer.invoke('disk-space'),

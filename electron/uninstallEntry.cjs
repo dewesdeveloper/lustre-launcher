@@ -59,6 +59,21 @@ async function findUninstallEntries(dir) {
  * Удалить игру как приложение Windows: деинсталлятор (тихо) + оставшиеся записи реестра.
  * Возвращает { removed: число убранных записей, cancelled: отказ в окне прав администратора }.
  */
+/**
+ * Скрипт удаления: деинсталлятор Inno (он копирует себя во временную папку и сразу выходит —
+ * ждём, пока запись исчезнет), затем удаляем всё, что осталось
+ */
+function removeScript(entries, unins) {
+  return [
+    unins ? `try { Start-Process -FilePath ${psQuote(unins)} -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -ErrorAction Stop } catch {}` : '',
+    `$keys = @(${entries.map((e) => psQuote(e.psPath)).join(',')})`,
+    unins ? 'for ($i = 0; $i -lt 60 -and @($keys | Where-Object { Test-Path -LiteralPath $_ }).Count -gt 0; $i++) { Start-Sleep -Milliseconds 500 }' : '',
+    'foreach ($k in $keys) { if (Test-Path -LiteralPath $k) { Remove-Item -LiteralPath $k -Recurse -Force -ErrorAction SilentlyContinue } }',
+    '$left = @($keys | Where-Object { Test-Path -LiteralPath $_ }).Count',
+    'exit $left',
+  ].filter(Boolean).join('\n')
+}
+
 async function removeUninstallEntries(dir) {
   const entries = await findUninstallEntries(dir)
   if (entries.length === 0) return { removed: 0 }
@@ -69,17 +84,7 @@ async function removeUninstallEntries(dir) {
       return f ? path.join(dir, f) : ''
     } catch { return '' }
   })()
-
-  // Один скрипт: деинсталлятор Inno (он копирует себя во временную папку и сразу выходит —
-  // ждём, пока запись исчезнет), затем удаляем всё, что осталось
-  const body = [
-    unins ? `try { Start-Process -FilePath ${psQuote(unins)} -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -ErrorAction Stop } catch {}` : '',
-    `$keys = @(${entries.map((e) => psQuote(e.psPath)).join(',')})`,
-    unins ? 'for ($i = 0; $i -lt 60 -and ($keys | Where-Object { Test-Path -LiteralPath $_ })); $i++) { Start-Sleep -Milliseconds 500 }' : '',
-    'foreach ($k in $keys) { if (Test-Path -LiteralPath $k) { Remove-Item -LiteralPath $k -Recurse -Force -ErrorAction SilentlyContinue } }',
-    '$left = @($keys | Where-Object { Test-Path -LiteralPath $_ }).Count',
-    'exit $left',
-  ].filter(Boolean).join('\n')
+  const body = removeScript(entries, unins)
 
   if (!needAdmin) {
     await runPs(body)
@@ -100,4 +105,4 @@ async function removeUninstallEntries(dir) {
   return { removed: entries.length - left.length, left: left.length }
 }
 
-module.exports = { findUninstallEntries, removeUninstallEntries }
+module.exports = { findUninstallEntries, removeUninstallEntries, removeScript, findScript }

@@ -2,6 +2,9 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Download as DownloadIcon } from 'lucide-react';
 import { useDialog } from '../../components/Dialogs';
+import { applyChosenCrack, askCrackMissing } from '../../utils/crackMissing';
+import CrackChoiceDialog, { type CrackOption } from '../../components/CrackChoiceDialog';
+import { nativeNotify } from '../../utils/nativeNotify';
 import type { Download, InstalledGame, InstallProgress } from './types';
 import DownloadsSection from './components/downloads/DownloadsSection';
 import PathPickerModal from './components/PathPickerModal';
@@ -15,6 +18,7 @@ export default function DownloadsPage() {
   const electron = (window as any).electron;
   const [downloads, setDownloads] = useState<Download[]>([]);
   // окно «Защитник нашёл угрозу»: установка — только после чекбокса и ввода слова «Установить»
+  const [crackChoice, setCrackChoice] = useState<{ id: string; name: string; options: CrackOption[] } | null>(null);
   const [threatPrompt, setThreatPrompt] = useState<{ name: string; threats: string[]; resolve: (go: boolean) => void } | null>(null);
   const [installed, setInstalled] = useState<InstalledGame[]>([]);
   const [installStates, setInstallStates] = useState<Record<string, { phase: string; percent: number; silent?: boolean; bytes?: number }>>({});
@@ -105,6 +109,18 @@ export default function DownloadsPage() {
         setInstallStates(prev => ({ ...prev, [id]: { phase: 'install', percent: -1 } }));
         res = await electron?.installGame?.(id, { skipScan: true });
       }
+    }
+    // репак встал без кряка — предложить переустановку с мастером (установщик сохранён)
+    if (res?.crackApplied) {
+      nativeNotify({ title: `Кряк ${res.crackApplied} установлен`, body: 'Лаунчер нашёл кряк в раздаче и поставил его сам — игра запустится без Steam.', kind: 'game' });
+    }
+    if (res?.crackOptions?.length) {
+      const name = downloads.find((d) => d.id === id)?.gameTitle || 'Игра';
+      setCrackChoice({ id, name, options: res.crackOptions });
+    }
+    if (res?.crackMissing) {
+      const name = downloads.find((d) => d.id === id)?.gameTitle || 'Игра';
+      void askCrackMissing(id, name, dlg).then(() => refreshInstalled());
     }
     if (res?.error) {
       setInstallErrors(prev => ({ ...prev, [id]: res.error }));
@@ -211,6 +227,20 @@ export default function DownloadsPage() {
           p?.run();
         }}
       />
+      {crackChoice && (
+        <CrackChoiceDialog
+          gameName={crackChoice.name}
+          options={crackChoice.options}
+          onClose={() => setCrackChoice(null)}
+          onPick={async (o) => {
+            const err = await applyChosenCrack(crackChoice.id, o.id);
+            if (err) return err;
+            nativeNotify({ title: `Кряк ${o.label} установлен`, body: crackChoice.name, kind: 'game' });
+            setCrackChoice(null);
+            refreshInstalled();
+          }}
+        />
+      )}
       {threatPrompt && (
         <ThreatInstallDialog
           gameName={threatPrompt.name}

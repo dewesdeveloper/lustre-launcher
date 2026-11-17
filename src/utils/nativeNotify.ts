@@ -14,7 +14,7 @@ export interface NativeNotifyOptions {
   /** Категория для настроек «Уведомлений»; без неё (проверка) показывается всегда */
   category?: NotifyCategory;
   /** Значок во всплывашке Lustre: что за событие и аватар (ссылка) */
-  kind?: 'notify' | 'message' | 'group' | 'friend' | 'game' | 'call';
+  kind?: 'notify' | 'message' | 'group' | 'friend' | 'game' | 'call' | 'achievement';
   icon?: string;
 }
 

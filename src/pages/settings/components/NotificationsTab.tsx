@@ -15,6 +15,7 @@ const CATEGORIES: { id: NotifyCategory; label: string }[] = [
   { id: 'friendGame', label: 'Друг запустил игру' },
   { id: 'calls', label: 'Входящие звонки' },
   { id: 'missed', label: 'Пропущенные и завершённые звонки' },
+  { id: 'achievements', label: 'Открыто достижение в игре' },
 ];
 
 const Head = ({ children }: { children: string }) => (

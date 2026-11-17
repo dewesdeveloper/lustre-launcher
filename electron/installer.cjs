@@ -880,15 +880,16 @@ async function launchInstalledGame(entry, launchOptions) {
 // Запуск установщика игры вручную пользователем.
 // ShellExecute ПЕРВЫМ (как двойной клик): корректно поднимает UAC и показывает окно.
 // spawn(CreateProcess) у requireAdministrator-репаков создаёт невидимую заглушку без окна
-async function launchInstaller(installerPath) {
+// args — ключи установщика (например, /DIR="…" — папка по умолчанию в мастере Inno Setup)
+async function launchInstaller(installerPath, args = []) {
   if (!installerPath || !fs.existsSync(installerPath)) return { error: 'Файл не найден: ' + installerPath }
   const cwd = path.dirname(installerPath)
-  let res = await launchViaShell(installerPath, [], cwd)
+  let res = await launchViaShell(installerPath, args, cwd)
   if (res.ok) return res
-  res = await launchProcess(installerPath, [], { cwd, detached: true, stdio: 'ignore' })
+  res = await launchProcess(installerPath, args, { cwd, detached: true, stdio: 'ignore', windowsVerbatimArguments: true })
   if (res.ok) return res
   await new Promise(r => setTimeout(r, 1500))
-  return await launchViaShell(installerPath, [], cwd)
+  return await launchViaShell(installerPath, args, cwd)
 }
 
 // Ждёт завершения процесса по PID; EPERM = процесс жив (запущен с повышением)
@@ -953,6 +954,7 @@ const APP_PATHS_DEFAULTS = {
   askInstallDir: true,   // спрашивать диск при каждой установке
   launchAtLogin: false,  // запускать лаунчер вместе с Windows (HKCU Run)
   autoInstallSetups: true, // ставить игры из setup.exe без мастера, в папку установки лаунчера
+  storageSetupDone: false, // при первом запуске игрок выбрал диск для игр (окно «Где хранить игры»)
   qbWebPort: 9091,       // порт веб-интерфейса qBittorrent (к нему подключается лаунчер)
   qbWebUser: 'admin',    // логин Web UI (дефолт qBittorrent)
   qbWebPass: '',         // пароль Web UI; шифруется safeStorage при сохранении

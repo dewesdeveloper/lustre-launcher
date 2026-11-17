@@ -18,6 +18,8 @@ export interface AppPaths {
   launchAtLogin: boolean;
   /** Ставить игры из setup.exe без мастера, в папку установки лаунчера */
   autoInstallSetups: boolean;
+  /** Игрок уже выбрал диск для игр в окне первого запуска */
+  storageSetupDone: boolean;
   /** Диск Windows: на нём игры лежат в данных лаунчера */
   systemDrive: string;
   /** Выбранные диски, «D:\» */
@@ -31,7 +33,7 @@ export interface AppPaths {
   error?: string;
 }
 
-export type AppPathsPatch = Partial<Pick<AppPaths, 'askDownloadDir' | 'askInstallDir' | 'autoInstallSetups' | 'downloadDrive' | 'installDrive'>>;
+export type AppPathsPatch = Partial<Pick<AppPaths, 'askDownloadDir' | 'askInstallDir' | 'autoInstallSetups' | 'storageSetupDone' | 'downloadDrive' | 'installDrive'>>;
 
 const electron = () => (window as any).electron;
 

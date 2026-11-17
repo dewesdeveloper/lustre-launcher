@@ -23,6 +23,7 @@ import { Loading } from '../../components/Loading';
 import { gameBannerUrl, gameBannerFallback, gameCoverUrl } from '../../utils/gameBanner';
 import { safeHtml } from '../../utils/safeHtml';
 import { applySeo, plainDescription } from '../../seo/seo';
+import AchievementsSection from '../../components/achievements/AchievementsSection';
 import { hasAdmin } from '../../admin';
 
 const GameDetailsPage: React.FC = () => {
@@ -346,6 +347,9 @@ const GameDetailsPage: React.FC = () => {
                 )}
               </div>
             </section>
+
+            {/* Достижения Steam: список, редкость и мои открытые */}
+            <AchievementsSection gameId={Number(game.ID)} gameTitle={game.title} className="" />
 
             {/* System Requirements */}
             {(minReq || maxReq) && (

@@ -2,9 +2,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   Play, Loader2, FolderSearch, MonitorSmartphone,
-  ShieldCheck } from 'lucide-react';
+  ShieldCheck, ShieldAlert } from 'lucide-react';
 import api from '../../api';
 import { useDialog } from '../../components/Dialogs';
+import { CRACK_MISSING_TEXT, applyChosenCrack, keepWithoutCrack, reinstallWithWizard } from '../../utils/crackMissing';
+import CrackChoiceDialog from '../../components/CrackChoiceDialog';
 import { notifyLibraryChanged } from '../../utils/libraryEvents';
 import type { InstalledGame, Game } from './types';
 import { landCoverFlight } from '../../utils/coverFlight';
@@ -25,6 +27,7 @@ import VirusCheckModal from './components/VirusCheckModal';
 import { reportRemoteInstall, type RemoteInstallState } from '../../api/remoteInstall';
 import { beforeLaunch } from '../../api/cloudSaves';
 import CloudSavesPanel from './components/CloudSavesPanel';
+import AchievementsSection from '../../components/achievements/AchievementsSection';
 
 const tokenize = (s: string) =>
   new Set(s.toLowerCase().split(/[^a-z0-9а-яё]+/).filter(t => t.length >= 3));
@@ -63,6 +66,7 @@ export default function LibraryGamePage() {
   // удалении игры с устройства (в electron-реестре запись удаляется).
   const [libLastPlayedAt, setLibLastPlayedAt] = useState<string | null>(null);
   const [installed, setInstalled] = useState<InstalledGame | null>(null);
+  const [crackPickOpen, setCrackPickOpen] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [submenuOpen, setSubmenuOpen] = useState(false);
@@ -490,6 +494,50 @@ export default function LibraryGamePage() {
           </div>
         </div>
         {installError && <p className="tl-term mt-2 text-[15px] text-[#ff5b8a]">{installError}</p>}
+        {installed?.crackOptions && installed.crackOptions.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-3 border border-[var(--line-2)] bg-[rgb(var(--accent-rgb)/.06)] px-4 py-3">
+            <ShieldAlert size={18} className="shrink-0 text-accent" />
+            <p className="tl-term min-w-[240px] flex-1 text-[15px] leading-snug text-pearl/85">
+              <span className="text-accent">Кряк не выбран.</span> В раздаче несколько кряков ({installed.crackOptions.map((o) => o.label).join(', ')}) — без кряка игра откроет Steam.
+            </p>
+            <button type="button" className="tl-btn solid" onClick={() => setCrackPickOpen(true)}>Выбрать кряк</button>
+          </div>
+        )}
+        {crackPickOpen && installed?.crackOptions && (
+          <CrackChoiceDialog
+            gameName={game.title}
+            options={installed.crackOptions}
+            onClose={() => setCrackPickOpen(false)}
+            onPick={async (o) => {
+              const err = await applyChosenCrack(installed.id, o.id);
+              if (err) return err;
+              setCrackPickOpen(false);
+              refreshInstalled();
+            }}
+          />
+        )}
+        {installed?.crackMissing && (
+          <div className="mt-3 flex flex-wrap items-center gap-3 border border-amber-400/50 bg-amber-400/[.07] px-4 py-3">
+            <ShieldAlert size={18} className="shrink-0 text-amber-300" />
+            <p className="tl-term min-w-[240px] flex-1 text-[15px] leading-snug text-pearl/85">
+              <span className="text-amber-300">Кряк не установлен.</span> {CRACK_MISSING_TEXT}
+            </p>
+            <button
+              type="button"
+              className="tl-btn solid"
+              onClick={async () => { await reinstallWithWizard(installed.id, game.title, dlg); refreshInstalled(); }}
+            >
+              Переустановить с мастером
+            </button>
+            <button
+              type="button"
+              className="tl-btn ghost"
+              onClick={async () => { if (await keepWithoutCrack(installed.id, dlg)) refreshInstalled(); }}
+            >
+              Оставить как есть
+            </button>
+          </div>
+        )}
         {bgInstall && !installed && (
           <p className="tl-term mt-2 text-[15px] text-[var(--muted)]">
             Игра устанавливается в фоне. Если установщик открыл свои окна (проверка файлов, DirectX, Visual C++) — завершите их, после этого появится кнопка «Играть».
@@ -502,6 +550,7 @@ export default function LibraryGamePage() {
         <div className="min-w-0 flex-1 max-lg:w-full">
           <ScreenshotStrip media={media} />
           <AboutSection game={game} />
+          <AchievementsSection gameId={Number(game.ID ?? id)} gameTitle={game.title} installedId={installed?.id ?? null} />
         </div>
 
         <div className="flex w-80 shrink-0 flex-col gap-5 max-lg:w-full">

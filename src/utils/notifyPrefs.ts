@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import notifSoundUrl from '../assets/sounds/received-mail-notification.mp3';
 
-export type NotifyCategory = 'messages' | 'groups' | 'friends' | 'friendGame' | 'calls' | 'missed';
+export type NotifyCategory = 'messages' | 'groups' | 'friends' | 'friendGame' | 'calls' | 'missed' | 'achievements';
 
 export interface NotifyPrefs {
   /** Всплывающие уведомления вообще */
@@ -30,7 +30,7 @@ export const DEFAULT_NOTIFY_PREFS: NotifyPrefs = {
   enabled: true,
   style: 'lustre',
   dnd: false,
-  categories: { messages: true, groups: true, friends: true, friendGame: true, calls: true, missed: true },
+  categories: { messages: true, groups: true, friends: true, friendGame: true, calls: true, missed: true, achievements: true },
   preview: true,
   sound: true,
   volume: 60,

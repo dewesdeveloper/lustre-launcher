@@ -95,7 +95,7 @@ export const ReviewForm = ({ user, myRating, setMyRating, myContent, setMyConten
     <textarea maxLength={4000}
       value={myContent}
       onChange={(e) => setMyContent(e.target.value)}
-      placeholder="Напишите своё мнение об игре (необязательно)..."
+      placeholder="Напишите своё мнение об игре: что понравилось или нет..."
       rows={3}
       className="w-full bg-[#16161a] border border-violet/20 rounded-xl px-4 py-3 text-sm text-pearl placeholder:text-pearl/55 focus:outline-none focus:border-accent/40 transition-all resize-none"
     />

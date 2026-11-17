@@ -106,6 +106,8 @@ function run(cmd, args) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const apiOf = ({ owner, repo }) => `https://api.github.com/repos/${owner}/${repo}`;
 const nameOf = ({ owner, repo }) => `${owner}/${repo}`;
+// Название релиза — из версии: раньше бралось из releaseName в package.json и застряло на «Public 0.1.8»
+const releaseTitle = (target) => (nameOf(target) === nameOf(PUBLIC_REPO) ? `Public ${VERSION}` : `Lustre ${VERSION}`);
 
 // ---------- закрытый модуль: убрать на время публичной сборки и обязательно вернуть ----------
 
@@ -334,7 +336,7 @@ async function publish(target, files, body, staleDrafts) {
   }
   console.log(`> создаю черновик ${TAG} в ${nameOf(target)}`);
   const release = await gh(target, 'POST', '/releases', {
-    body: JSON.stringify({ tag_name: TAG, name: pkg.releaseName || VERSION, body, draft: true, prerelease: false }),
+    body: JSON.stringify({ tag_name: TAG, name: releaseTitle(target), body, draft: true, prerelease: false }),
     headers: { 'Content-Type': 'application/json' },
     okStatuses: [201],
     attempts: 1, // повтор создания мог бы сделать второй черновик

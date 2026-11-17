@@ -16,6 +16,9 @@ import defender from './defender.cjs'
 import torrentScrape from './torrentScrape.cjs'
 import cloudSaves from './cloudSaves.cjs'
 import uninstallEntry from './uninstallEntry.cjs'
+import achievements from './achievements.cjs'
+import crackCheck from './crackCheck.cjs'
+import crackApply from './crackApply.cjs'
 import { File as MegaFile } from 'megajs'
 
 const { autoUpdater } = electronUpdater
@@ -1646,9 +1649,12 @@ async function installGameImpl(gameId, opts = {}) {
     // Распакованная игра намного меньше скачанного — значит, распаковали не то (например, кряк
     // рядом с готовой игрой). Скачанные файлы тогда не удаляем: их можно установить заново.
     let keepDownload = false
+    // кряк отдельно в раздаче (папка Crack\ рядом с игрой) — ставим; несколько — спросим игрока
+    const crack = exePath ? await resolveCrack(dest, [dest, contentPath]) : null
+    if (crack?.status === 'choose') keepDownload = true
     if (kind === 'archive') {
       const [installedBytes, downloadedBytes] = await Promise.all([pathSize(dest), pathSize(contentPath)])
-      keepDownload = downloadedBytes > 0 && installedBytes < downloadedBytes * 0.5
+      keepDownload = keepDownload || (downloadedBytes > 0 && installedBytes < downloadedBytes * 0.5)
       if (keepDownload) console.warn(`[Install] распаковано ${installedBytes} из ${downloadedBytes} байт — загрузку не удаляю`)
     }
     const entry = {
@@ -1663,6 +1669,7 @@ async function installGameImpl(gameId, opts = {}) {
       installedAt: Date.now(),
       playtimeMs: 0,
       ...(keepDownload ? { sourcePath: contentPath } : {}),
+      ...crackFields(crack),
     }
     registerGame(entry)
     // catalogId — id игры в каталоге (для статистики установок), gameId — id скачивания
@@ -1716,19 +1723,29 @@ async function installGameImpl(gameId, opts = {}) {
     }
 
     const exePath = rankGameExecutable(target, baseName)
+    // Мастер репака мог предлагать «Crack version / Steam version»: без мастера ставится вариант
+    // по умолчанию, и иногда это версия для Steam — игра откроет магазин Steam. Проверяем и,
+    // если кряка нет, оставляем установщик: игрок переустановит с мастером без нового скачивания.
+    // Кряк лежит в раздаче отдельно (папка RUNE\, FLT\, Crack\…) — ставим сами; несколько — спросим.
+    const crack = exePath ? await resolveCrack(target, [source, contentPath]) : null
+    const crackMissing = crack?.status === 'steam-only'
+    const crackOptions = crack?.status === 'choose' ? crack.options : null
+    if (crackMissing) console.warn('[Install] после тихой установки нет кряка (оригинальный Steam API):', baseName)
+    const keepSetup = !exePath || crackMissing || !!crackOptions
     registerGame({
       id: gameId, catalogId, name: baseName, installPath: target,
       // папку указал лаунчер: при удалении игры её можно стереть целиком
       managed: true,
       exePath, kind: 'installer', silent: true,
-      // пока exe не найден, установочные файлы держим: вдруг пользователь захочет переустановить
-      ...(exePath ? {} : { sourcePath: source }),
+      // пока exe не найден или кряк не применён, установочные файлы держим: для переустановки
+      ...(keepSetup ? { sourcePath: source, setupPath: installer } : {}),
+      ...crackFields(crack),
       installedAt: Date.now(), playtimeMs: 0,
     })
-    if (exePath) await dropDownload(gameId, source)
+    if (!keepSetup) await dropDownload(gameId, source)
     sendInstallProgress({ gameId, phase: exePath ? 'done' : 'idle', percent: exePath ? 100 : -1 })
     return exePath
-      ? { ok: true, kind: 'installer', installPath: target, exePath }
+      ? { ok: true, kind: 'installer', installPath: target, exePath, ...crackFields(crack) }
       : { ok: true, kind: 'installer', installPath: target, message: `Игра установлена в «${target}», но файл запуска не найден. Укажите exe на странице игры.` }
   }
 
@@ -1918,7 +1935,7 @@ ipcMain.handle('install-game', async (e, gameId, opts) => {
 // Уведомления лаунчера. По умолчанию — свои всплывашки в правом нижнем углу экрана (как в Steam);
 // в настройках можно вернуть системные уведомления Windows.
 // Клик по уведомлению — фокус главного окна + событие в рендерер (navigate и т.п.)
-const TOAST_KINDS = new Set(['notify', 'message', 'group', 'friend', 'game', 'call'])
+const TOAST_KINDS = new Set(['notify', 'message', 'group', 'friend', 'game', 'call', 'achievement'])
 ipcMain.handle('notify-show', (e, opts) => {
   try {
     const title = String(opts?.title || 'Lustre').slice(0, 120)
@@ -1982,7 +1999,9 @@ function startGameSession(entry) {
   if (!entry || playtime.isTracked(entry.id)) return
   registerGame({ ...entry, lastPlayedAt: Date.now() })
   // Учёт времени игры: process-watcher растит playtimeMs, пока процесс жив
+  const stopAchievements = watchAchievements(entry)
   playtime.track({ ...entry, lastPlayedAt: Date.now() }, () => {
+    stopAchievements()
     // игра закрылась — сообщим рендереру (сброс статуса «Играет в …» + отчёт сессии)
     try { mainWindow?.webContents.send('game-state', { running: false, name: entry.name, id: entry.id, catalogId: entry.catalogId || 0 }) } catch {}
     onGameExited(entry)
@@ -2015,6 +2034,77 @@ async function scanExternalGameLaunches() {
   }
 }
 // ==========================================================
+
+// --- Достижения Steam из файлов эмулятора в репаке (см. electron/achievements.cjs) ---
+// appid игры Steam знает рендерер (ссылка на магазин в каталоге): страница игры сообщает его,
+// и он запоминается в записи установленной игры — чтобы следить за достижениями во время игры.
+function watchAchievements(entry) {
+  const cur = loadRegistry().find((g) => g.id === entry.id) || entry
+  const appId = Number(cur.steamAppId) || 0
+  if (!appId) return () => {}
+  const catalogId = Number(cur.catalogId) || 0
+  return achievements.watch(appId, cur.installPath || '', (unlocked) => {
+    try { mainWindow?.webContents.send('achievements-unlocked', { id: entry.id, catalogId, appId, name: cur.name, unlocked }) } catch { /* окно закрыто */ }
+  })
+}
+ipcMain.handle('achievements-read', (e, { id, appId } = {}) => {
+  const entry = id != null ? loadRegistry().find((g) => g.id === id) : null
+  const app_ = Number(appId) || Number(entry?.steamAppId) || 0
+  if (!app_) return { files: [], unlocked: [] }
+  try { return achievements.read(app_, entry?.installPath || '') } catch (err) { return { files: [], unlocked: [], error: String(err?.message || err) } }
+})
+ipcMain.handle('achievements-bind', (e, { id, appId, catalogId } = {}) => {
+  const entry = loadRegistry().find((g) => g.id === id)
+  const app_ = Number(appId) || 0
+  const cat = Number(entry?.catalogId) || Number(catalogId) || 0
+  if (!entry || !app_ || (Number(entry.steamAppId) === app_ && Number(entry.catalogId) === cat)) return false
+  registerGame({ ...entry, steamAppId: app_, catalogId: cat })
+  return true
+})
+
+/**
+ * Кряк после установки: есть — ничего не делаем; нет, но в раздаче лежит ровно один кряк —
+ * ставим его; кряков несколько — даём выбрать игроку (status 'choose'); нет нигде — 'steam-only'.
+ */
+async function resolveCrack(target, roots) {
+  const check = await crackCheck.check(target).catch(() => ({ status: 'unknown' }))
+  if (check.status !== 'steam-only') return { status: check.status }
+  const options = crackApply.findCracks(roots)
+  if (options.length === 1) {
+    const res = await crackApply.apply(options[0], target, getBundled7z())
+    if (res.ok) {
+      console.log('[Crack] установлен автоматически:', options[0].label, '→', target)
+      return { status: 'applied', label: res.label }
+    }
+    console.warn('[Crack] не удалось поставить', options[0].label + ':', res.error)
+    return { status: 'steam-only', applyError: res.error }
+  }
+  if (options.length > 1) return { status: 'choose', options: options.map(({ id, label, path: p, kind }) => ({ id, label, path: p, kind })) }
+  return { status: 'steam-only' }
+}
+
+/** Поля записи игры и ответа установки по итогу resolveCrack */
+function crackFields(crack) {
+  if (!crack) return {}
+  return {
+    ...(crack.status !== 'unknown' ? { crackChecked: true } : {}),
+    ...(crack.status === 'steam-only' ? { crackMissing: true } : {}),
+    ...(crack.status === 'choose' ? { crackOptions: crack.options } : {}),
+    ...(crack.status === 'applied' ? { crackApplied: crack.label } : {}),
+  }
+}
+
+// Разовая проверка кряка у игр, установленных тихо раньше (до появления проверки после установки)
+async function checkInstalledCracks() {
+  for (const g of loadRegistry().filter((x) => x.silent && x.exePath && x.installPath && !x.crackChecked)) {
+    const res = await crackCheck.check(g.installPath).catch(() => ({ status: 'unknown' }))
+    if (res.status === 'unknown') continue
+    const cur = loadRegistry().find((x) => x.id === g.id)
+    if (!cur) continue
+    registerGame({ ...cur, crackChecked: true, ...(res.status === 'steam-only' && !cur.crackDismissed ? { crackMissing: true } : {}) })
+    if (res.status === 'steam-only') console.warn('[CrackCheck] без кряка:', g.name)
+  }
+}
 
 // --- Облачные сохранения (логика «когда и что синхронизировать» — в рендерере, src/api/cloudSaves.ts) ---
 ipcMain.handle('cloud-saves-locate', (e, opts) => cloudSaves.locate(app, opts || {}))
@@ -2079,6 +2169,7 @@ ipcMain.handle('set-game-exe', (e, id, exePath) => {
   const source = entry.sourcePath
   if (source && !isInside(exePath, source)) {
     delete entry.sourcePath
+    delete entry.setupPath
     dropDownload(id, source).catch(() => {})
   }
   registerGame(entry)
@@ -2100,6 +2191,59 @@ function canDeleteInstallPath(entry) {
   return entry.kind !== 'installer' &&
     [getGamesDir(), ...legacyDirs('legacyInstallDirs')].some((dir) => isInside(entry.installPath, dir))
 }
+
+// После тихой установки не нашлось кряка (см. electron/crackCheck.cjs): переустановить игру
+// с мастером репака, где игрок сам выберет «Crack version». Установщик сохранён в setupPath.
+ipcMain.handle('install-reinstall-wizard', async (e, id) => {
+  const entry = loadRegistry().find((g) => g.id === id)
+  if (!entry?.setupPath || !fs.existsSync(entry.setupPath)) {
+    return { error: 'Установщик не сохранился — удалите игру и скачайте её заново' }
+  }
+  // убираем тихую установку: деинсталлятор репака (и запись в «Установленных приложениях») и папку
+  if (entry.installPath && canDeleteInstallPath(entry) && fs.existsSync(entry.installPath)) {
+    try { await uninstallEntry.removeUninstallEntries(entry.installPath) } catch (err) { console.warn('[Reinstall]', err?.message || err) }
+    await fs.promises.rm(entry.installPath, { recursive: true, force: true }).catch(() => {})
+  }
+  // В мастере подставляем папку игр лаунчера: там лаунчер найдёт игру сам и при удалении сотрёт её
+  // целиком (репаки по умолчанию предлагают Program Files или папку Steam)
+  const suggestedDir = uniqueDest(path.join(getGamesDir(), sanitizeName(entry.name) || 'Game'))
+  const type = detectInstallerType(entry.setupPath)
+  const dirArgs = type === 'inno' ? [`/DIR="${suggestedDir}"`] : type === 'nsis' ? [`/D=${suggestedDir}`] : []
+  const launchRes = await launchInstaller(entry.setupPath, dirArgs)
+  if (launchRes?.error) return { error: 'Не удалось запустить установщик: ' + launchRes.error }
+  const { crackMissing: _c, silent: _s, managed: _m, crackOptions: _o, ...rest } = entry
+  registerGame({ ...rest, installPath: '', exePath: null, kind: 'installer' })
+  sendInstallProgress({ gameId: id, catalogId: entry.catalogId || 0, phase: 'installer', percent: -1 })
+  waitProcessExit(launchRes.pid).then(() => {
+    const cur = loadRegistry().find((g) => g.id === id)
+    if (cur && !cur.exePath) sendInstallProgress({ gameId: id, catalogId: entry.catalogId || 0, phase: 'idle', percent: -1 })
+  })
+  return { ok: true, suggestedDir, gamesDir: getGamesDir() }
+})
+// Игрок выбрал один из нескольких кряков, найденных в раздаче
+ipcMain.handle('install-apply-crack', async (e, id, optionId) => {
+  const entry = loadRegistry().find((g) => g.id === id)
+  const option = entry?.crackOptions?.find((o) => o.id === optionId)
+  if (!entry || !option) return { error: 'Кряк не найден — скачайте игру заново' }
+  if (!fs.existsSync(option.path)) return { error: 'Файлы кряка уже удалены — скачайте игру заново' }
+  const res = await crackApply.apply(option, entry.installPath, getBundled7z())
+  if (!res.ok) return { error: 'Не удалось поставить кряк: ' + res.error }
+  const { crackOptions: _o, crackMissing: _m, sourcePath, setupPath: _s, ...rest } = entry
+  registerGame({ ...rest, crackApplied: res.label, crackChecked: true })
+  // установка завершена — скачанные файлы больше не нужны
+  if (sourcePath) await dropDownload(id, sourcePath)
+  return { ok: true, label: res.label }
+})
+
+// Игрок решил оставить установку как есть: установочные файлы больше не нужны
+ipcMain.handle('install-crack-dismiss', async (e, id) => {
+  const entry = loadRegistry().find((g) => g.id === id)
+  if (!entry) return false
+  if (entry.sourcePath) await dropDownload(id, entry.sourcePath)
+  const { sourcePath: _p, setupPath: _s, crackMissing: _c, crackOptions: _o, ...rest } = entry
+  registerGame({ ...rest, crackDismissed: true })
+  return true
+})
 
 ipcMain.handle('uninstall-game', async (e, id) => {
   const entry = loadRegistry().find(g => g.id === id)
@@ -2227,6 +2371,7 @@ function pathsView(extra = {}) {
     askInstallDir: p.askInstallDir !== false,
     launchAtLogin: p.launchAtLogin === true,
     autoInstallSetups: p.autoInstallSetups !== false,
+    storageSetupDone: p.storageSetupDone === true,
     systemDrive: systemDrive(),
     downloadDrive: normalizeDrive(p.downloadDrive) || systemDrive(),
     installDrive: normalizeDrive(p.installDrive) || systemDrive(),
@@ -2237,7 +2382,19 @@ function pathsView(extra = {}) {
   }
 }
 
-const PATH_FLAGS = ['askDownloadDir', 'askInstallDir', 'autoInstallSetups']
+const PATH_FLAGS = ['askDownloadDir', 'askInstallDir', 'autoInstallSetups', 'storageSetupDone']
+
+// Окно «Где хранить игры» — только новым игрокам. У кого уже есть установленные игры, загрузки
+// или выбранный диск, выбор считается сделанным: место хранения у них менять не нужно.
+function markStorageSetupForExistingUsers() {
+  const p = loadAppPaths()
+  if (p.storageSetupDone) return
+  const hasGames = loadRegistry().length > 0
+  const hasDrive = !!normalizeDrive(p.installDrive) || !!normalizeDrive(p.downloadDrive)
+  let hasDownloads = false
+  try { hasDownloads = fs.readdirSync(downloadDirOrDefault()).length > 0 } catch { /* папки ещё нет */ }
+  if (hasGames || hasDrive || hasDownloads) saveAppPaths({ storageSetupDone: true })
+}
 
 ipcMain.handle('paths:get', () => pathsView())
 
@@ -3234,6 +3391,9 @@ app.whenReady().then(() => {
   // игры, запущенные ярлыком или из папки, тоже учитываются (scanExternalGameLaunches)
   setTimeout(() => { void scanExternalGameLaunches() }, 15_000)
   setInterval(() => { void scanExternalGameLaunches() }, EXTERNAL_GAME_SCAN_MS)
+  try { markStorageSetupForExistingUsers() } catch (err) { console.warn('[Storage]', err?.message || err) }
+  // игры, поставленные тихо до появления проверки кряка, проверяем один раз
+  setTimeout(() => { void checkInstalledCracks() }, 20_000)
   // Свои папки скачивания и установки больше не выбираются: переводим их на выбор диска
   try { migrateCustomPaths() } catch (err) { console.error('[Main] перенос настроек путей:', err) }
   // Локальный сервер перевода для Unity-игр (XUnity.AutoTranslator шлёт сюда тексты во время игры).
