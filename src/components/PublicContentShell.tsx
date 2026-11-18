@@ -1,4 +1,5 @@
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
+import { SiteFooter } from './OfficialLinks';
 import MainLayout from '../MainLayout';
 import { Navbar } from '../pages/navigation/Navbar';
 import { useAuth } from '../context/AuthContext';
@@ -14,6 +15,7 @@ import { useAuth } from '../context/AuthContext';
  */
 export function PublicContentShell() {
   const { user, isLoading } = useAuth();
+  const { pathname } = useLocation();
 
   if (isLoading) {
     return (
@@ -29,6 +31,8 @@ export function PublicContentShell() {
     <div className="min-h-screen w-full bg-main-bg flex flex-col">
       <Navbar />
       <main data-page-content className="flex-1"><Outlet /></main>
+      {/* у /about свой футер с теми же ссылками */}
+      {pathname !== '/about' && <SiteFooter />}
     </div>
   );
 }

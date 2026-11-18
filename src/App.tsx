@@ -26,6 +26,7 @@ import PrivacyPage from './pages/help/PrivacyPage';
 import LegalInfoPage from './pages/help/LegalInfoPage';
 import SubscriberAgreementPage from './pages/help/SubscriberAgreementPage';
 import TermsPage from './pages/help/TermsPage';
+import { SiteFooter } from './components/OfficialLinks';
 import EditProfilePage from './pages/profile/EditProfile';
 import AddFriend from './pages/friends/AddFriend';
 import FriendsLayout from './pages/friends/FriendsLayout';
@@ -86,7 +87,7 @@ function PublicShell() {
     );
   }
 
-  if (!user) return <>{outlet}</>;
+  if (!user) return <>{outlet}<SiteFooter /></>;
   return <MainLayout>{outlet}</MainLayout>;
 }
 

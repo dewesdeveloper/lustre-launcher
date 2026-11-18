@@ -35,3 +35,35 @@ export default function OfficialLinks({ className = '' }: { className?: string }
     </nav>
   );
 }
+
+/** Правовые документы сервиса — ссылки в футерах сайта и лаунчера */
+export const LEGAL_DOCS = [
+  { to: '/terms', label: 'Пользовательское соглашение' },
+  { to: '/privacy', label: 'Политика конфиденциальности' },
+  { to: '/subscriber-agreement', label: 'Соглашение подписчика (оферта)' },
+  { to: '/legal', label: 'Правовая информация' },
+  { to: '/support', label: 'Поддержка' },
+];
+
+export function DocLinks({ className = '' }: { className?: string }) {
+  return (
+    <nav aria-label="Документы" className={`flex flex-wrap items-center gap-x-5 gap-y-1.5 tl-term text-[14px] ${className}`}>
+      {LEGAL_DOCS.map((d) => (
+        <Link key={d.to} to={d.to} className="text-[var(--muted)] underline-offset-4 transition-colors hover:text-white hover:underline">
+          {d.label}
+        </Link>
+      ))}
+    </nav>
+  );
+}
+
+/** Нижняя полоса для страниц без своего футера (гостевые каталог, подписка, документы) */
+export function SiteFooter() {
+  return (
+    <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-[var(--line)] px-8 py-5">
+      <span className="tl-term text-[13px] text-[var(--muted-2)]">© 2026 Lustre</span>
+      <DocLinks />
+      <a href={`mailto:${SUPPORT_EMAIL}`} className="tl-term text-[14px] text-[var(--muted)] hover:text-white">{SUPPORT_EMAIL}</a>
+    </footer>
+  );
+}
