@@ -422,6 +422,9 @@ const silentInstallSucceeded = (type, code) => code === 0 || (type === 'msi' && 
 
 // Запуск установщика через ShellExecute: так Windows сама спрашивает права
 // администратора, если они нужны. Ждём завершения и возвращаем код выхода.
+// Потоки распаковки 7-Zip: половина ядер, но не больше 4 — расход памяти растёт с каждым потоком
+const EXTRACT_THREADS = Math.max(1, Math.min(4, Math.floor((os.cpus()?.length || 2) / 2)))
+
 function runInstallerSilently(file, type, dir) {
   const cmd = silentInstallCommand(file, type, dir)
   if (!cmd) return Promise.resolve({ error: 'неизвестный тип установщика' })
@@ -434,7 +437,18 @@ function runInstallerSilently(file, type, dir) {
     '$i = New-Object System.Diagnostics.ProcessStartInfo',
     `$i.FileName = ${q(cmd.exe)}; $i.Arguments = ${q(cmd.args.join(' '))}; $i.WorkingDirectory = ${q(path.dirname(file))}`,
     '$i.UseShellExecute = $true',
-    "$p = [System.Diagnostics.Process]::Start($i); $p.WaitForExit(); Write-Output ('EXIT:' + $p.ExitCode) }",
+    '$p = [System.Diagnostics.Process]::Start($i)',
+    // Распаковщики репаков (CLS-srep, 7-Zip, unarc) тянут гигабайты памяти и все ядра: ставим
+    // установщику и всему, что он запустил, пониженный приоритет — система остаётся отзывчивой.
+    // Повышенные (с правами администратора) процессы могут не поддаться — тогда просто пропускаем.
+    "$tree = @{}; $tree[$p.Id] = $true",
+    'while (-not $p.WaitForExit(3000)) {',
+    '  try { if ($p.PriorityClass -ne "BelowNormal") { $p.PriorityClass = "BelowNormal" } } catch {}',
+    '  $all = Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId -ErrorAction SilentlyContinue',
+    '  do { $added = $false; foreach ($c in $all) { if ($tree.ContainsKey([int]$c.ParentProcessId) -and -not $tree.ContainsKey([int]$c.ProcessId)) { $tree[[int]$c.ProcessId] = $true; $added = $true } } } while ($added)',
+    '  foreach ($id in @($tree.Keys)) { if ($id -ne $p.Id) { try { $q = [System.Diagnostics.Process]::GetProcessById($id); if ($q.PriorityClass -ne "BelowNormal") { $q.PriorityClass = "BelowNormal" } } catch {} } }',
+    '}',
+    "Write-Output ('EXIT:' + $p.ExitCode) }",
     // код ошибки Windows: 1223 — пользователь отказал в окне запроса прав
     "catch { $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }; Write-Output ('FAIL:' + $e.NativeErrorCode + ':' + $e.Message); exit 1 }",
   ].join('\n')
@@ -603,6 +617,8 @@ function extractArchive(archivePath, destDir, onProgress) {
   // stdin закрыт: если распаковщик запросит пароль — получит EOF и вернёт ошибку вместо зависания
   const attempt = (bin, args) => new Promise((resolve, reject) => {
     const child = spawn(bin, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    // пониженный приоритет: распаковка многогигабайтного архива не должна подвешивать систему
+    try { if (child.pid) os.setPriority(child.pid, os.constants.priority.PRIORITY_BELOW_NORMAL) } catch { /* нет прав */ }
     let buf = ''
     let settled = false
     const settle = (fn, arg) => { if (!settled) { settled = true; fn(arg) } }
@@ -630,7 +646,8 @@ function extractArchive(archivePath, destDir, onProgress) {
       for (const password of ARCHIVE_PASSWORDS) {
         const args = tool.kind === 'unrar'
           ? ['x', '-y', '-o+', ...(password ? ['-p' + password] : ['-p-']), archivePath, destDir + path.sep]
-          : ['x', '-y', '-bso0', '-bsp1', ...(password ? ['-p' + password] : []), '-o' + destDir, archivePath]
+          // -mmt: меньше потоков — меньше памяти (у 7-Zip она растёт с числом потоков распаковки)
+          : ['x', '-y', '-bso0', '-bsp1', `-mmt${EXTRACT_THREADS}`, ...(password ? ['-p' + password] : []), '-o' + destDir, archivePath]
         let code
         try {
           code = await attempt(tool.bin, args)

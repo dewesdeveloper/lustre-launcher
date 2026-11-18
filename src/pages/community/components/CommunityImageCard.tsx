@@ -1,5 +1,6 @@
 import { IconTrash } from '@tabler/icons-react';
 import type { CommunityImage } from '../../../api/community';
+import UserLink from '../../../components/UserLink';
 
 interface CommunityImageCardProps {
   image: CommunityImage;
@@ -28,9 +29,9 @@ export default function CommunityImageCard({ image, canDelete, onDelete }: Commu
           alt=""
           className="w-5 h-5 border border-[var(--line)] object-cover"
         />
-        <span className="tl-term text-[14px] tl-muted truncate">
+        <UserLink username={image.author?.username} displayName={image.author?.profile?.display_name} avatarUrl={image.author?.profile?.avatar_url} className="tl-term text-[14px] tl-muted truncate hover:text-white">
           {image.author?.profile?.display_name || image.author?.username || 'Игрок'}
-        </span>
+        </UserLink>
       </div>
     </div>
   );

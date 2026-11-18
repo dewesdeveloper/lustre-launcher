@@ -9,7 +9,7 @@ interface DownloadCardProps {
   onRemove: (id: string) => void;
   onOpenGame?: (gameId: number) => void;
   onInstall?: (id: string) => void;
-  installState?: { phase: string; percent: number; silent?: boolean; bytes?: number };
+  installState?: { phase: string; percent: number; silent?: boolean; bytes?: number; queued?: boolean };
   installError?: string;
 }
 
@@ -132,7 +132,9 @@ const DownloadCard = ({ dl, onPause, onResume, onRemove, onOpenGame, onInstall, 
         <div className="mt-3 pt-3 border-t border-[var(--line)]">
           <div className="flex items-center gap-2 tl-term text-[14px] text-[var(--cyan,#22d3ee)]">
             <Loader2 size={13} className="animate-spin" />
-            {installState!.phase === 'scan'
+            {installState!.queued
+              ? 'В очереди: ждёт окончания другой установки'
+              : installState!.phase === 'scan'
               ? 'Проверка Защитником Windows…'
               : installState!.phase === 'installer'
               ? 'Установщик запущен — завершите установку и укажите exe на странице игры'
@@ -146,6 +148,7 @@ const DownloadCard = ({ dl, onPause, onResume, onRemove, onOpenGame, onInstall, 
           {installState!.silent && (
             <p className="mt-1.5 tl-term text-[14px] text-[var(--muted)]">
               Установщик может открыть свои окна: проверку файлов, DirectX, Visual C++. Завершите их — после этого появится кнопка «Играть».
+              Распаковка репака может занимать несколько гигабайт памяти — на это время лучше закрыть браузер и игры.
             </p>
           )}
           {installState!.phase === 'install' && installState!.percent >= 0 && (

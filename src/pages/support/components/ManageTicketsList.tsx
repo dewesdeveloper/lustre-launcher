@@ -3,6 +3,7 @@ import {
 } from '@tabler/icons-react';
 import type { SupportTicket } from '../../../api/support';
 import { ticketStatusStyles, CATEGORY_LABEL, PRIORITY_LABEL, avatarOf } from '../ui';
+import UserLink from '../../../components/UserLink';
 
 const STATUS_FILTERS: { id: string; label: string }[] = [
   { id: '', label: 'Все' },
@@ -99,7 +100,7 @@ export const ManageTicketsList = ({
               <div className="vt">
                 <b className="truncate">{ticket.subject}</b>
                 <div className="vd truncate">
-                  {ticket.author?.profile?.display_name || ticket.author?.username} · {CATEGORY_LABEL[ticket.category] || 'Другое'}
+                  <UserLink username={ticket.author?.username} hoverCard={false} className="hover:text-white">{ticket.author?.profile?.display_name || ticket.author?.username}</UserLink> · {CATEGORY_LABEL[ticket.category] || 'Другое'}
                   {last ? ` · ${last.is_staff ? 'Поддержка: ' : ''}${last.content}` : ''}
                 </div>
               </div>

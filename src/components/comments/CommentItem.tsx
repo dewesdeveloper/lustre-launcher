@@ -2,6 +2,7 @@ import ProBadge, { PRO_NICK_CLASS } from '../ProBadge';
 import { Trash2 } from 'lucide-react';
 import type { Comment } from './types';
 import { UserAvatarHover } from '../UserAvatarHover';
+import UserLink from '../UserLink';
 import AvatarFrame from '../AvatarFrame';
 import { parseTags } from '../../pages/profile/constants';
 import VerifiedBadge from '../../components/VerifiedBadge';
@@ -51,9 +52,9 @@ export const CommentItem = ({ comment, canDelete, onDelete }: CommentItemProps) 
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className="text-[11px] font-bold text-pearl/60 flex items-center gap-1.5">
               {profile?.is_pro && <ProBadge />}
-              <span className={profile?.is_pro ? PRO_NICK_CLASS : undefined}>
+              <UserLink username={comment.author?.username} hoverCard={false} className={profile?.is_pro ? PRO_NICK_CLASS : 'hover:text-white'}>
                 {profile?.display_name || comment.author?.username || 'Аноним'}
-              </span>
+              </UserLink>
               {profile?.verified && <VerifiedBadge size={12} />}
             </span>
             {visibleTitles.map((t) => {

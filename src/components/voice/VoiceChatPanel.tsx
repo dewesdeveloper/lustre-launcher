@@ -5,6 +5,7 @@ import { deleteVoiceChatMessage, getVoiceChatHistory, sendVoiceChat, type VoiceC
 import { useAuth } from '../../context/AuthContext';
 import { canModerate } from '../../utils/roles';
 import { RichText } from '../../pages/chat/components/ui';
+import UserLink from '../UserLink';
 
 const MAX_LENGTH = 2000;
 
@@ -89,14 +90,16 @@ export function VoiceChatPanel({ channelId, canManage }: { channelId: number; ca
           const name = m.author?.profile?.display_name || m.author?.username || 'Игрок';
           return (
             <div key={m.ID} className="group/msg flex gap-2 min-w-0">
-              <img
-                src={m.author?.profile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${m.author_id}`}
-                alt=""
-                className="w-7 h-7 shrink-0 object-cover border border-[var(--line)]"
-              />
+              <UserLink username={m.author?.username} hoverCard={false} className="shrink-0">
+                <img
+                  src={m.author?.profile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${m.author_id}`}
+                  alt=""
+                  className="w-7 h-7 shrink-0 object-cover border border-[var(--line)]"
+                />
+              </UserLink>
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline gap-2">
-                  <span className="tl-head text-[10px] text-white truncate">{name}</span>
+                  <UserLink username={m.author?.username} displayName={m.author?.profile?.display_name} avatarUrl={m.author?.profile?.avatar_url} className="tl-head text-[10px] text-white truncate">{name}</UserLink>
                   <span className="tl-term text-[13px] text-pearl/60 shrink-0">
                     {new Date(m.CreatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
                   </span>

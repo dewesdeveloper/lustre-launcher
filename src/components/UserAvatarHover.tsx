@@ -89,9 +89,12 @@ export function UserAvatarHover({ username, children, displayName, avatarUrl, on
     <>
       <span
         ref={wrapRef}
-        className={`relative inline-flex ${className}`}
+        className={`relative inline-flex ${active ? 'cursor-pointer' : ''} ${className}`}
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
+        // клик по аватару — профиль (раньше аватар только показывал минипрофиль при наведении);
+        // не всплывает, чтобы не открыть заодно пост или обсуждение, в котором стоит аватар
+        onClick={active ? (e) => { e.stopPropagation(); onOpen(); } : undefined}
       >
         {children}
       </span>

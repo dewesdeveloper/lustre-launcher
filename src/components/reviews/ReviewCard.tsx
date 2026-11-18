@@ -1,6 +1,7 @@
 import { ThumbsUp, ThumbsDown, Meh, Trash2 } from 'lucide-react';
 import type { Review } from './types';
 import { UserAvatarHover } from '../UserAvatarHover';
+import UserLink from '../UserLink';
 import AvatarFrame from '../AvatarFrame';
 import { parseTags } from '../../pages/profile/constants';
 
@@ -34,9 +35,9 @@ export const ReviewCard = ({ review, canDelete, onDelete }: ReviewCardProps) => 
         </UserAvatarHover>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <span className="text-xs font-bold text-pearl/70">
+            <UserLink username={review.author?.username} hoverCard={false} className="text-xs font-bold text-pearl/70 hover:text-white">
               {profile?.display_name || review.author?.username || 'Пользователь'}
-            </span>
+            </UserLink>
             {visibleTitles.map((t) => {
               const color = t.color || '#FF006E';
               return (

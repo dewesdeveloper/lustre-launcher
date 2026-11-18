@@ -1,7 +1,7 @@
 import type { MouseEvent } from 'react';
 import { IconChevronRight, IconMessage2, IconTrash } from '@tabler/icons-react';
 import ProBadge, { PRO_NICK_CLASS } from '../../../components/ProBadge';
-import { UserAvatarHover } from '../../../components/UserAvatarHover';
+import UserLink from '../../../components/UserLink';
 import type { CommunityPost } from '../../../api/community';
 import VerifiedBadge from '../../../components/VerifiedBadge';
 
@@ -30,14 +30,14 @@ export default function PostCard({ post, canDelete, onDelete, onOpen, commentsCo
   return (
     <article onClick={onOpen} className="tl-panel tl-gcard group p-6 text-left">
       <div className="flex items-start gap-4">
-        <UserAvatarHover username={author?.username} displayName={author?.profile?.display_name} avatarUrl={author?.profile?.avatar_url}>
+        <UserLink username={author?.username} displayName={author?.profile?.display_name} avatarUrl={author?.profile?.avatar_url}>
           <img src={avatar} alt="" className="h-10 w-10 shrink-0 border border-[var(--line-2)] object-cover" />
-        </UserAvatarHover>
+        </UserLink>
 
         <div className="min-w-0 flex-1">
           <header className="flex items-center gap-3">
             {pro && <ProBadge />}
-            <span className={`tl-head text-[10px] font-bold uppercase ${pro ? PRO_NICK_CLASS : 'text-[var(--muted)]'}`}>{name}</span>
+            <UserLink username={author?.username} hoverCard={false} className={`tl-head text-[10px] font-bold uppercase ${pro ? PRO_NICK_CLASS : 'text-[var(--muted)] hover:text-white'}`}>{name}</UserLink>
             {author?.profile?.verified && <VerifiedBadge size={12} />}
             {date && <time className="tl-term text-[15px] text-[var(--muted-2)]">{date}</time>}
           </header>

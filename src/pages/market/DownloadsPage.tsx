@@ -21,7 +21,7 @@ export default function DownloadsPage() {
   const [crackChoice, setCrackChoice] = useState<{ id: string; name: string; options: CrackOption[] } | null>(null);
   const [threatPrompt, setThreatPrompt] = useState<{ name: string; threats: string[]; resolve: (go: boolean) => void } | null>(null);
   const [installed, setInstalled] = useState<InstalledGame[]>([]);
-  const [installStates, setInstallStates] = useState<Record<string, { phase: string; percent: number; silent?: boolean; bytes?: number }>>({});
+  const [installStates, setInstallStates] = useState<Record<string, { phase: string; percent: number; silent?: boolean; bytes?: number; queued?: boolean }>>({});
   const [installErrors, setInstallErrors] = useState<Record<string, string>>({});
   // Выбор пути: показывается при каждом действии, пока не отмечено
   // «Не показывать снова» (вернуть можно в Настройки → Хранилище).
@@ -68,7 +68,7 @@ export default function DownloadsPage() {
         });
         return;
       }
-      setInstallStates(prev => ({ ...prev, [p.gameId]: { phase: p.phase, percent: p.percent, silent: p.silent, bytes: p.bytes } }));
+      setInstallStates(prev => ({ ...prev, [p.gameId]: { phase: p.phase, percent: p.percent, silent: p.silent, bytes: p.bytes, queued: p.queued } }));
       if (p.phase === 'done') refreshInstalled();
     });
     // отписка при уходе со страницы (раньше обработчики копились при каждом заходе)

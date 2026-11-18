@@ -12,6 +12,7 @@ import { useDialog } from '../../components/Dialogs';
 import { useAuth } from '../../context/AuthContext';
 import { canModerate } from '../../utils/roles';
 import VerifiedBadge from '../../components/VerifiedBadge';
+import UserLink from '../../components/UserLink';
 
 const REPLY_MAX = 2000;
 const avatarOf = (author: CommunityCreator | undefined, fallbackId: number) =>
@@ -24,7 +25,7 @@ function AuthorName({ author, className = '' }: { author?: CommunityCreator; cla
   return (
     <>
       {pro && <ProBadge />}
-      <span className={`${className} ${pro ? PRO_NICK_CLASS : ''}`}>{nameOf(author)}</span>
+      <UserLink username={author?.username} displayName={author?.profile?.display_name} avatarUrl={author?.profile?.avatar_url} className={`${className} ${pro ? PRO_NICK_CLASS : ''}`}>{nameOf(author)}</UserLink>
       {author?.profile?.verified && <VerifiedBadge size={12} />}
     </>
   );
@@ -36,7 +37,7 @@ function Reply({ reply, canDelete, onDelete }: { reply: CommunityPostComment; ca
     : '';
   return (
     <div className="tl-vrow group">
-      <div className="ic"><img src={avatarOf(reply.author, reply.author_id)} alt="" className="h-full w-full object-cover" /></div>
+      <div className="ic"><UserLink username={reply.author?.username} hoverCard={false} className="block h-full w-full"><img src={avatarOf(reply.author, reply.author_id)} alt="" className="h-full w-full object-cover" /></UserLink></div>
       <div className="vt min-w-0">
         <b>
           <span className="inline-flex flex-wrap items-center gap-2.5">
@@ -171,7 +172,7 @@ export default function CommunityPostPage() {
 
       <article className="tl-panel mb-6 p-7">
         <div className="flex items-start gap-4">
-          <img src={avatarOf(post.author, post.author_id)} alt="" className="h-11 w-11 shrink-0 border border-[var(--line-2)] object-cover" />
+          <UserLink username={post.author?.username} hoverCard={false} className="shrink-0"><img src={avatarOf(post.author, post.author_id)} alt="" className="h-11 w-11 shrink-0 border border-[var(--line-2)] object-cover" /></UserLink>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2.5">
               <AuthorName author={post.author} className="tl-head text-[10px] font-bold uppercase text-[var(--muted)]" />

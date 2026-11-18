@@ -126,6 +126,8 @@ export interface InstallProgress {
   silent?: boolean;
   /** сколько уже записано в папку игры при тихой установке */
   bytes?: number;
+  /** ждёт в очереди: установки идут по одной (распаковщики репаков занимают гигабайты памяти) */
+  queued?: boolean;
 }
 
 export type SortKey = 'relevance' | 'title-asc' | 'title-desc' | 'date-new' | 'date-old' | 'added-new' | 'added-old';

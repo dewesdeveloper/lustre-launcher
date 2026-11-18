@@ -5,6 +5,7 @@ import {
 import type { SupportTicket } from '../../../api/support';
 import { ticketStatusStyles, CATEGORY_LABEL, avatarOf } from '../ui';
 import { MessageContent } from './MessageContent';
+import UserLink from '../../../components/UserLink';
 
 interface TicketChatProps {
   ticket: SupportTicket | null;
@@ -47,7 +48,9 @@ export const TicketChat = ({
               <div className="flex-1 min-w-0">
                 <h1 className="tl-head text-[13px] font-bold uppercase tracking-[0.1em] text-white truncate">{ticket.subject}</h1>
                 <p className="tl-term text-[15px] text-[var(--muted)] mt-0.5">
-                  {ticket.author?.profile?.display_name || ticket.author?.username} · {ticket.email || 'без email'}
+                  <UserLink username={ticket.author?.username} displayName={ticket.author?.profile?.display_name} avatarUrl={ticket.author?.profile?.avatar_url} className="text-pearl/85 hover:text-white">
+                    {ticket.author?.profile?.display_name || ticket.author?.username}
+                  </UserLink> · {ticket.email || 'без email'}
                   {' · '}{CATEGORY_LABEL[ticket.category] || 'Другое'}
                   {ticket.priority === 'high' && <span className="text-[#ff5b8a]"> · высокий приоритет</span>}
                 </p>
@@ -83,11 +86,13 @@ export const TicketChat = ({
             const authorName = m.author?.profile?.display_name || m.author?.username || (m.is_staff ? 'Поддержка' : (isStaff ? 'Пользователь' : 'Вы'));
             return (
               <div key={m.id} className={`flex gap-3 ${mine ? 'flex-row-reverse' : ''}`}>
-                <img src={avatarOf(m.author)} alt="" className="w-8 h-8 object-cover shrink-0 border border-[var(--line)]" />
+                <UserLink username={m.is_staff ? undefined : m.author?.username} hoverCard={false} className="shrink-0">
+                  <img src={avatarOf(m.author)} alt="" className="w-8 h-8 object-cover shrink-0 border border-[var(--line)]" />
+                </UserLink>
                 <div className={`max-w-[75%] flex flex-col ${mine ? 'items-end text-right' : ''}`}>
                   <div className="flex items-center gap-2 mb-1" style={{ flexDirection: mine ? 'row-reverse' : 'row' }}>
                     <span className={`tl-head text-[10px] font-bold uppercase tracking-[0.14em] ${m.is_staff ? 'text-violet' : 'text-[var(--muted)]'}`}>
-                      {m.is_staff ? 'Поддержка' : authorName}
+                      {m.is_staff ? 'Поддержка' : <UserLink username={m.author?.username} displayName={m.author?.profile?.display_name} avatarUrl={m.author?.profile?.avatar_url} className="hover:text-white">{authorName}</UserLink>}
                     </span>
                     <span className="tl-term text-[14px] text-[var(--muted-2)]">
                       {new Date(m.created_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}

@@ -9,6 +9,7 @@ import { useAdultConsent } from '../../../components/AdultGate/AdultGate';
 import { useDialog } from '../../../components/Dialogs';
 import { useAuth } from '../../../context/AuthContext';
 import { canModerate } from '../../../utils/roles';
+import UserLink from '../../../components/UserLink';
 
 export type CommunityFeedKind = 'screenshots' | 'workshop' | 'broadcasts';
 export type PublishTab = 'image' | 'workshop';
@@ -97,7 +98,9 @@ function ScreenshotsFeed({ onPublish }: { onPublish: (() => void) | null }) {
             </button>
             <div className="flex items-center gap-2 px-3 py-2 border-t border-[var(--line)]">
               <span className="tl-term text-[14px] tl-muted truncate flex-1">
-                {i.author?.profile?.display_name || i.author?.username || 'Игрок'}
+                <UserLink username={i.author?.username} displayName={i.author?.profile?.display_name} avatarUrl={i.author?.profile?.avatar_url} className="hover:text-white">
+                  {i.author?.profile?.display_name || i.author?.username || 'Игрок'}
+                </UserLink>
               </span>
               <button type="button" onClick={() => navigate(`/community/${i.community_id}`)} className="tl-term text-[14px] text-accent hover:underline truncate max-w-[55%]">
                 {i.community?.name}
@@ -150,7 +153,7 @@ function WorkshopFeed({ onPublish }: { onPublish: (() => void) | null }) {
               <h3 className="tl-head text-[11px] text-white break-words">{i.title}</h3>
               {i.description && <p className="tl-term text-[15px] text-pearl/80 mt-1 whitespace-pre-wrap break-words line-clamp-4">{i.description}</p>}
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 tl-term text-[14px] tl-muted">
-                <span>{i.author?.profile?.display_name || i.author?.username || 'Игрок'}</span>
+                <UserLink username={i.author?.username} displayName={i.author?.profile?.display_name} avatarUrl={i.author?.profile?.avatar_url} className="hover:text-white">{i.author?.profile?.display_name || i.author?.username || 'Игрок'}</UserLink>
                 <button type="button" onClick={() => navigate(`/community/${i.community_id}`)} className="text-accent hover:underline">{i.community?.name}</button>
               </div>
             </div>

@@ -1964,6 +1964,10 @@ async function installGameImpl(gameId, opts = {}) {
   return { ok: true, kind: 'portable', installPath: dest, exePath: entry.exePath }
 }
 
+// Установки по одной: распаковщики репаков (CLS-srep, 7-Zip, unarc) занимают по 2–4 ГБ памяти,
+// и две установки сразу могли съесть всю оперативную память. Следующая ждёт окончания текущей.
+let installQueue = Promise.resolve()
+
 ipcMain.handle('install-game', async (e, gameId, opts) => {
   // Повторный клик, пока идёт установка, запускал вторую параллельную
   if (installingIds.has(gameId)) return { error: 'Игра уже устанавливается' }
@@ -1972,7 +1976,12 @@ ipcMain.handle('install-game', async (e, gameId, opts) => {
   // название из каталога (прямая загрузка или запомненное для торрента) — до установки:
   // после неё запись загрузки удаляется
   const catalogTitle = httpDownloads.get(gameId)?.gameTitle || loadDownloadTitles()[String(gameId).toLowerCase()] || ''
+  const waitFor = installQueue
+  let release = () => {}
+  installQueue = new Promise((r) => { release = r })
   try {
+    if (activeInstalls > 1) sendInstallProgress({ gameId, phase: 'install', percent: -1, queued: true })
+    await waitFor
     const res = await installGameImpl(gameId, { skipScan: opts?.skipScan === true })
     if (catalogTitle) {
       const entry = loadRegistry().find((g) => g.id === gameId)
@@ -1987,6 +1996,7 @@ ipcMain.handle('install-game', async (e, gameId, opts) => {
     // установка с мастером (phase 'installer') продолжается вне лаунчера — её состояние оставляем
     if (installStatus.get(gameId)?.phase !== 'installer') installStatus.delete(gameId)
     activeInstalls--
+    release() // следующая установка из очереди
     maybeInstallUpdate() // установка закончилась — можно ставить обновление
   }
 })

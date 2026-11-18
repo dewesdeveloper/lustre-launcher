@@ -1,6 +1,7 @@
 import { IconLock, IconMessage2, IconMessages } from '@tabler/icons-react';
 import type { CommunityFormat, DiscussionItem } from '../../../api/community';
 import { formatOf } from '../formats';
+import UserLink from '../../../components/UserLink';
 
 const ago = (iso: string) => {
   const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
@@ -55,14 +56,14 @@ export default function DiscussionCard({ item, onOpen, onCommunity }: { item: Di
       </div>
 
       <div className="flex w-44 shrink-0 flex-col items-end justify-center gap-1.5 px-5 text-right">
-        <span className="flex max-w-full items-center gap-2">
-          <span className="tl-head truncate text-[10px] font-bold uppercase text-[var(--muted)]">{name}</span>
+        <UserLink username={author?.username} displayName={author?.profile?.display_name} avatarUrl={author?.profile?.avatar_url} className="flex max-w-full items-center gap-2 hover:no-underline">
+          <span className="tl-head truncate text-[10px] font-bold uppercase text-[var(--muted)] hover:text-white">{name}</span>
           <img
             src={author?.profile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${post.author_id}`}
             alt=""
             className="h-7 w-7 shrink-0 border border-[var(--line)] object-cover"
           />
-        </span>
+        </UserLink>
         {last && (
           <span className="tl-term flex items-center gap-1 text-[14px] text-[var(--muted-2)]" title={item.last_comment_at ? 'Последний ответ' : 'Создано'}>
             <IconMessage2 size={11} /> {ago(last)}

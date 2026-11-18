@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  IconBook, IconChevronRight, IconCircleFilled, IconDeviceGamepad, IconPackage,
+  IconBook, IconBooks, IconChevronRight, IconCircleFilled, IconDeviceGamepad, IconPackage,
   IconPhoto, IconPlayerPlay, IconStar, IconTools,
 } from '@tabler/icons-react';
 import api from '../../api';
@@ -9,6 +9,7 @@ import { presenceLabel, usePresence } from '../../api/presence';
 import GameMiniCover from '../../components/GameMiniCover';
 import { UserAvatarHover } from '../../components/UserAvatarHover';
 import { Loading } from '../../components/Loading';
+import { useAuth } from '../../context/AuthContext';
 
 /** Запись из /friends/user/:username — нужны только данные самого друга */
 type Friend = {
@@ -89,7 +90,11 @@ function useProfileFriends(username?: string) {
 export const ProfileSidebar = () => {
   const navigate = useNavigate();
   const { username } = useParams();
+  const { user } = useAuth();
   const friends = useProfileFriends(username);
+  // своя библиотека — страница библиотеки лаунчера; чужая — игры пользователя в его профиле
+  const isOwn = !username || user?.username === username;
+  const openLibrary = () => navigate(isOwn ? '/library' : `/profile/${username}?tab=games`);
 
   const note = (text: string) => <p className="tl-head py-2 text-center text-[10px] uppercase text-[var(--muted-2)]">{text}</p>;
 
@@ -104,6 +109,15 @@ export const ProfileSidebar = () => {
       </div>
 
       <nav className="tl-panel overflow-hidden">
+        <button
+          type="button"
+          onClick={openLibrary}
+          className="group flex w-full items-center gap-3 border-b border-[rgb(var(--accent-rgb)/.12)] px-5 py-3.5 transition-all hover:bg-[rgb(var(--accent-rgb)/.07)]"
+        >
+          <span className="text-violet transition-colors group-hover:text-accent"><IconBooks size={16} /></span>
+          <span className="tl-head text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--muted)] group-hover:text-white">{isOwn ? 'Моя библиотека' : 'Библиотека'}</span>
+          <IconChevronRight size={14} className="ml-auto text-[var(--muted-2)] transition-colors group-hover:text-accent" />
+        </button>
         {SECTIONS.map((s) => (
           <button
             key={s.label}

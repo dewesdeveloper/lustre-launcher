@@ -1,4 +1,5 @@
 import type { SupportMessage, TicketStatus } from '../../api/support';
+import UserLink from '../../components/UserLink';
 
 export const STATUS_META: Record<TicketStatus, { label: string; color: string; bg: string; border: string }> = {
   open: { label: 'Открыт', color: '#3B82F6', bg: 'rgba(59,130,246,0.1)', border: 'rgba(59,130,246,0.4)' },
@@ -44,9 +45,9 @@ export const TicketThread = ({ messages }: { messages: SupportMessage[] }) => (
         <img src={avatarOf(m.author)} alt="" className="w-8 h-8 object-cover shrink-0 border border-[var(--line)] bg-black/40" />
         <div className={`max-w-[75%] px-4 py-3 border ${m.is_staff ? 'bg-[rgb(var(--violet-rgb)/.07)] border-[rgba(131,56,236,.4)]' : 'bg-[rgb(var(--accent-rgb)/.03)] border-[var(--line-2)]'}`}>
           <div className={`flex items-center gap-2 mb-1 ${m.is_staff ? '' : 'justify-end'}`}>
-            <span className="tl-head text-[10px] font-bold uppercase tracking-[0.14em] text-pearl/60">
+            <UserLink username={m.is_staff ? undefined : m.author?.username} displayName={m.author?.profile?.display_name} avatarUrl={m.author?.profile?.avatar_url} className="tl-head text-[10px] font-bold uppercase tracking-[0.14em] text-pearl/60 hover:text-white">
               {m.author?.profile?.display_name || m.author?.username || 'Пользователь'}
-            </span>
+            </UserLink>
             {m.is_staff && <span className="tl-chip age">Поддержка</span>}
           </div>
           <p className="tl-wrap text-[12px] text-pearl/85 leading-relaxed whitespace-pre-wrap break-words">{m.content}</p>
