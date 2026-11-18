@@ -1,9 +1,11 @@
 import { Link } from 'react-router-dom';
-import { Send, Users } from 'lucide-react';
+import { Mail, Send, Users } from 'lucide-react';
 
 /** Официальное сообщество LustreHub в Lustre и канал в Telegram */
 export const OFFICIAL_COMMUNITY_PATH = '/community/8';
 export const OFFICIAL_TELEGRAM_URL = 'https://t.me/lustrehubpto';
+/** Почта службы поддержки — для обращений, претензий и правообладателей */
+export const SUPPORT_EMAIL = 'developerdewes@gmail.com';
 
 // Заметные кнопки: розовая рамка со свечением, при наведении — заливка акцентом
 const BTN =
@@ -26,6 +28,9 @@ export default function OfficialLinks({ className = '' }: { className?: string }
       </Link>
       <a href={OFFICIAL_TELEGRAM_URL} target="_blank" rel="noopener noreferrer" className={BTN}>
         <Send size={15} className="text-accent transition-colors group-hover:text-white" /> Наш Telegram
+      </a>
+      <a href={`mailto:${SUPPORT_EMAIL}`} className={BTN} title="Почта поддержки">
+        <Mail size={15} className="text-accent transition-colors group-hover:text-white" /> {SUPPORT_EMAIL}
       </a>
     </nav>
   );

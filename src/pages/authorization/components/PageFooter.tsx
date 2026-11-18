@@ -7,8 +7,11 @@ export function PageFooter() {
       <span>© 2026 Lustre</span>
       <OfficialLinks />
       <div className="flex gap-8">
-        <Link to="/privacy" className="transition-colors hover:text-white">
+        <Link to="/terms" className="transition-colors hover:text-white">
           Пользовательское соглашение
+        </Link>
+        <Link to="/privacy" className="transition-colors hover:text-white">
+          Конфиденциальность
         </Link>
         <Link to="/support" className="transition-colors hover:text-white">
           Поддержка

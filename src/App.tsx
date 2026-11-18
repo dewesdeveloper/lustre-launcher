@@ -25,6 +25,7 @@ import { PublicContentShell } from './components/PublicContentShell';
 import PrivacyPage from './pages/help/PrivacyPage';
 import LegalInfoPage from './pages/help/LegalInfoPage';
 import SubscriberAgreementPage from './pages/help/SubscriberAgreementPage';
+import TermsPage from './pages/help/TermsPage';
 import EditProfilePage from './pages/profile/EditProfile';
 import AddFriend from './pages/friends/AddFriend';
 import FriendsLayout from './pages/friends/FriendsLayout';
@@ -135,6 +136,7 @@ export default function App() {
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/legal" element={<LegalInfoPage />} />
           <Route path="/subscriber-agreement" element={<SubscriberAgreementPage />} />
+          <Route path="/terms" element={<TermsPage />} />
           <Route path="/support" element={<OfflineGate><SupportPage /></OfflineGate>} />
         </Route>
 
@@ -147,7 +149,7 @@ export default function App() {
           <Route path="/store" element={<OfflineGate><StorePage /></OfflineGate>} />
           <Route path="/store/recommendations" element={<OfflineGate><RecommendationsPage /></OfflineGate>} />
           <Route path="/store/trends" element={<OfflineGate><TrendsPage /></OfflineGate>} />
-          {/* цены Pro и пакетов валюты видны без входа (требование ЮKassa) */}
+          {/* цены Pro и пакетов валюты видны без входа (требование к продажам на расстоянии) */}
           <Route path="/subscriptions" element={<OfflineGate><SubscriptionsPage /></OfflineGate>} />
           <Route path="/games/:id" element={<OfflineGate><GameDetailsPage /></OfflineGate>} />
           <Route path="/community" element={<OfflineGate><CommunityPage /></OfflineGate>} />

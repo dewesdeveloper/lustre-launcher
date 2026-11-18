@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { SellerInfo } from '../../api/legal';
+import { SUPPORT_EMAIL } from '../../components/OfficialLinks';
 
 // Общие куски правовых документов: кто продавец/оператор и как с ним связаться.
 // Реквизиты приходят с сервера (/legal/seller); пока их нет — нейтральные формулировки.
@@ -26,7 +27,6 @@ export function sellerRows(s: SellerInfo): ReactNode[] {
 
 /** «по почте … или через раздел «Поддержка»» */
 export function contactText(s: SellerInfo | null): ReactNode {
-  return s?.email
-    ? <>по почте <a href={`mailto:${s.email}`} className="text-accent hover:underline">{s.email}</a> или через раздел «Поддержка» в лаунчере</>
-    : 'через раздел «Поддержка» в лаунчере';
+  const email = s?.email || SUPPORT_EMAIL;
+  return <>по почте <a href={`mailto:${email}`} className="text-accent hover:underline">{email}</a> или через раздел «Поддержка» на сайте и в лаунчере</>;
 }

@@ -21,7 +21,7 @@ export default function LegalInfoPage() {
       title: 'О сервисе',
       paragraphs: [
         `Lustre — платформа для поиска и запуска бесплатных игр с сообществом, чатами и звонками. Сервис предоставляет ${sellerName(seller)}.`,
-        <>Платная часть — подписка Lustre Pro; её условия — в <Link to="/subscriber-agreement" className="text-accent hover:underline">соглашении подписчика</Link> (публичная оферта). Обработка данных описана в <Link to="/privacy" className="text-accent hover:underline">политике конфиденциальности</Link>.</>,
+        <>Платная часть — подписка Lustre Pro; её условия — в <Link to="/subscriber-agreement" className="text-accent hover:underline">соглашении подписчика</Link> (публичная оферта). Правила пользования сервисом — в <Link to="/terms" className="text-accent hover:underline">пользовательском соглашении</Link>. Обработка данных описана в <Link to="/privacy" className="text-accent hover:underline">политике конфиденциальности</Link>.</>,
       ],
     },
     {

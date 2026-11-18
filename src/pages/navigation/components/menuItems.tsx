@@ -60,6 +60,7 @@ const signOut = (logout: () => void): MenuItem => ({ label: 'Выйти', icon: 
 /** Поддержка и правовые документы */
 export const helpMenu = (go: Go): MenuItem[] => [
   { label: 'Служба поддержки', icon: <LifeBuoy size={14} />, onClick: () => go('/support') },
+  { label: 'Пользовательское соглашение', icon: <FileText size={14} />, onClick: () => go('/terms') },
   { label: 'Политика конфиденциальности', icon: <Shield size={14} />, onClick: () => go('/privacy') },
   { label: 'Правовая информация', icon: <Scale size={14} />, onClick: () => go('/legal') },
   { label: 'Соглашение подписчика', icon: <FileText size={14} />, onClick: () => go('/subscriber-agreement') },

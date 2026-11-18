@@ -1,3 +1,4 @@
+import { OFFICIAL_TELEGRAM_URL, SUPPORT_EMAIL } from '../../../components/OfficialLinks';
 import {
   IconChevronLeft, IconLifebuoy,
   IconInbox, IconChevronRight,
@@ -25,6 +26,11 @@ export const SupportHub = ({ isStaff, onBack, onManage }: SupportHubProps) => (
         <span className="tag">SUPPORT</span>
       </div>
       <p className="tl-term tl-muted text-[15px]">Отвечаем в среднем в течение 24 часов</p>
+      <p className="tl-term tl-muted mt-1 text-[15px]">
+        Создайте обращение ниже или напишите на почту{' '}
+        <a href={`mailto:${SUPPORT_EMAIL}`} className="text-accent hover:underline">{SUPPORT_EMAIL}</a> или в{' '}
+        <a href={OFFICIAL_TELEGRAM_URL} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">Telegram</a>.
+      </p>
     </header>
 
     {/* Входящие — для поддержки */}

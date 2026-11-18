@@ -41,7 +41,7 @@ export function ConsentCheckboxes({ value, onChange, disabled, idPrefix = 'conse
         disabled={disabled}
         attention={nudge > 0}
         label="Согласен с пользовательским соглашением"
-        links={<Link to="/legal">Пользовательское соглашение</Link>}
+        links={<Link to="/terms">Пользовательское соглашение</Link>}
       />
       <GlitchCheckbox
         id={`${idPrefix}-privacy`}
