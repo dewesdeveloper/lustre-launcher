@@ -32,7 +32,7 @@ export type CloudSavesSummary = {
 };
 
 /** dirs — все папки игры, которые идут в один архив (например, AppData\Local и AppData\Roaming) */
-export type SaveFolder = { dir: string; dirs: string[]; source: 'user' | 'catalog' | 'emulator' | 'guess'; files: number; size: number; newest: number; fingerprint: string };
+export type SaveFolder = { dir: string; dirs: string[]; source: 'user' | 'catalog' | 'emulator' | 'engine' | 'guess'; files: number; size: number; newest: number; fingerprint: string };
 
 type LocalState = { override?: string; auto?: boolean; fingerprint?: string; versionId?: number; syncedAt?: number };
 

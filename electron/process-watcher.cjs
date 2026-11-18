@@ -1,6 +1,6 @@
 // Учёт времени игры (порт process-watcher из Hydra, упрощённый для Windows):
 // после запуска игры поллинг процессов; пока процесс жив — playtimeMs растёт в реестре
-const { spawn } = require('node:child_process')
+const { spawn, execFile } = require('node:child_process')
 const path = require('node:path')
 const { loadRegistry, saveRegistry, isGameExe } = require('./installer.cjs')
 
@@ -43,6 +43,23 @@ function listProcesses() {
         const i = l.indexOf('|')
         return { name: l.slice(0, i), path: l.slice(i + 1) }
       }))
+    })
+  })
+}
+
+// Только имена запущенных exe — через tasklist: в десятки раз дешевле, чем запуск PowerShell
+// (тот при каждом вызове поднимал процесс на ~100 МБ и около секунды процессорного времени).
+// Имена в нижнем регистре, с «.exe». null — tasklist недоступен.
+function listProcessNames() {
+  return new Promise((resolve) => {
+    execFile('tasklist', ['/fo', 'csv', '/nh'], { windowsHide: true, timeout: 10000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+      if (err) { resolve(null); return }
+      const names = new Set()
+      for (const line of String(stdout).split(String.fromCharCode(10))) {
+        const m = /^"([^"]+)"/.exec(line)
+        if (m) names.add(m[1].toLowerCase())
+      }
+      resolve(names)
     })
   })
 }
@@ -99,8 +116,13 @@ async function tick() {
     timer = null
     return
   }
-  const procs = await listProcesses()
+  // Быстрая проверка по имени exe; список процессов с путями (PowerShell) — только если exe игры
+  // не видно: игра закрылась или её держит лаунчер-обёртка из той же папки
+  const names = await listProcessNames()
+  let procs = null
   for (const [id, g] of [...tracked]) {
+    if (names?.has(g.exeBase)) { accumulate(id, delta); continue }
+    procs ??= await listProcesses()
     if (procs.some((p) => isGameRunning(p, g))) accumulate(id, delta)
     else {
       tracked.delete(id)
@@ -109,4 +131,4 @@ async function tick() {
   }
 }
 
-module.exports = { track, isTracked, listProcesses, isGameProcess }
+module.exports = { track, isTracked, listProcesses, listProcessNames, isGameProcess }

@@ -172,6 +172,8 @@ contextBridge.exposeInMainWorld('electron', {
     return () => ipcRenderer.removeListener('scan-result', handler);
   },
   installedGames: () => ipcRenderer.invoke('installed-games'),
+  // название игры из каталога для записи об установке (оверлей, «Играет в …»)
+  setGameTitle: (id, title) => ipcRenderer.invoke('set-game-title', id, title),
   launchGame: (id) => ipcRenderer.invoke('launch-game', id),
   pickGameExe: () => ipcRenderer.invoke('pick-exe'),
   setGameExe: (id, exePath) => ipcRenderer.invoke('set-game-exe', id, exePath),

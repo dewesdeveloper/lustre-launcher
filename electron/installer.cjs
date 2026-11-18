@@ -870,6 +870,31 @@ function isGameExe(file) {
   return /\.exe$/i.test(base) && !INSTALLER_NAME_RE.test(base) && !EXE_EXCLUDE_RE.test(base)
 }
 
+// Имя игры для показа (оверлей, «Играет в …» у друзей): название из каталога, а без него —
+// имя папки без мусора раздачи: «stardew_valley_78674» → «Stardew Valley»,
+// «Little Nightmares III [FitGirl Repack]» → «Little Nightmares III», «RimWorld v1 6 4633 by Pioneer» → «RimWorld»
+function gameDisplayName(entry) {
+  const title = String(entry?.title || '').trim()
+  if (title) return title
+  const raw = String(entry?.name || '')
+  let s = raw
+    .replace(/\[[^\]]*\]|\([^)]*\)|\{[^}]*\}/g, ' ')
+    .replace(/-(rune|codex|flt|tenoke|plaza|skidrow|razor1911|dodi|elamigos|empress|gog)$/i, '')
+    .replace(/[_.]+/g, ' ')
+    // «Enter-the-Gungeon-v2…»: имя без пробелов, слова через дефис
+    .replace(/^[^\s]*-[^\s]*-[^\s]*.*$/, (m) => (m.includes(' ') && m.indexOf(' ') > m.lastIndexOf('-') ? m : m.replace(/-/g, ' ')))
+    .replace(/\s+(v|ver|version)\s*\d[\w .-]*$/i, '')
+    .replace(/\s+(by|от)\s+\S+.*$/i, '')
+    .replace(/\s+(repack|portable|multi\d*|gog|rune|codex|flt|tenoke|elamigos|fitgirl|dodi)\b.*$/i, '')
+    .replace(/(\s+\d{4,})+\s*$/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!s) return raw
+  // всё строчными (имя файла) — первые буквы слов заглавными
+  if (s === s.toLowerCase()) s = s.replace(/(^|\s)(\p{L})/gu, (m, sp, ch) => sp + ch.toUpperCase())
+  return s
+}
+
 async function launchInstalledGame(entry, launchOptions) {
   if (!entry?.exePath || !fs.existsSync(entry.exePath)) {
     return { error: 'Исполняемый файл игры не найден' }
@@ -988,11 +1013,30 @@ function normalizeDrive(value) {
   return m ? `${m[1].toUpperCase()}:\\` : ''
 }
 
+// Буквы приводов CD/DVD, в том числе подключённых образов .iso (DriveType 5): они только для
+// чтения, и выбор такого «диска» для игр давал ошибку «Нет доступа к диску». Список обновляется
+// в фоне — listDrives синхронный и вызывается часто.
+let opticalDrives = new Set()
+let opticalCheckedAt = 0
+function refreshOpticalDrives() {
+  if (Date.now() - opticalCheckedAt < 30000) return
+  opticalCheckedAt = Date.now()
+  execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+    "Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=5' | ForEach-Object { $_.DeviceID }"],
+  { windowsHide: true, timeout: 15000 }, (err, stdout) => {
+    if (err) return
+    opticalDrives = new Set(String(stdout).split(/\r?\n/).map((s) => s.trim().toUpperCase()).filter((s) => /^[A-Z]:$/.test(s)))
+  })
+}
+refreshOpticalDrives()
+
 function listDrives() {
+  refreshOpticalDrives()
   const drives = []
   for (const letter of 'CDEFGHIJKLMNOPQRSTUVWXYZ') {
     const root = `${letter}:\\`
     try {
+      if (opticalDrives.has(`${letter}:`)) continue
       if (!fs.existsSync(root)) continue
       const st = fs.statfsSync(root)
       if (!st.blocks) continue
@@ -1082,6 +1126,7 @@ function createDesktopShortcut(name, targetPath) {
 }
 
 module.exports = {
+  gameDisplayName,
   isGameExe,
   extractorsFor,
   getBundled7z,

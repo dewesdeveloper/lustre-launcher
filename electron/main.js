@@ -800,6 +800,24 @@ ipcMain.handle('qb-webcreds-set', async (e, creds) => {
 })
 
 // Register torrent handlers
+// Название игры из каталога для скачиваний (ключ — хеш раздачи): имя раздачи бывает любым
+// («stardew_valley_78674»), а при установке нужно показывать настоящее название
+const downloadTitlesFile = () => path.join(app.getPath('userData'), 'download-titles.json')
+function loadDownloadTitles() {
+  try { return JSON.parse(fs.readFileSync(downloadTitlesFile(), 'utf8')) || {} } catch { return {} }
+}
+function rememberDownloadTitle(hash, title) {
+  const key = String(hash || '').toLowerCase()
+  const value = String(title || '').trim().slice(0, 200)
+  if (!/^[0-9a-f]{40}$/.test(key) || !value) return
+  const all = loadDownloadTitles()
+  all[key] = value
+  // храним последние 300 записей
+  const keys = Object.keys(all)
+  for (const k of keys.slice(0, Math.max(0, keys.length - 300))) delete all[k]
+  try { fs.writeFileSync(downloadTitlesFile(), JSON.stringify(all)) } catch { /* не критично */ }
+}
+
 ipcMain.handle('torrent-add', async (event, { magnetURI, gameId, gameTitle }) => {
   console.log('[Torrent] add:', gameTitle)
   // каталожный id кладём в тег торрента — при установке он станет catalogId
@@ -810,6 +828,7 @@ ipcMain.handle('torrent-add', async (event, { magnetURI, gameId, gameTitle }) =>
   // GameActions показывает её диалогом, без молчаливого перехода в пустые «Загрузки»
   if (result.error) return result
   if (result.existing) await qbResumeTorrent(result.hash).catch(() => {}) // запрошен заново — значит, нужен
+  rememberDownloadTitle(result.hash || magnetHash(magnetURI), gameTitle)
   startStatusPolling()
   return { id: magnetURI, info: { gameTitle } }
 })
@@ -840,16 +859,43 @@ async function broadcastDownloads() {
   maybeInstallUpdate() // если ждалось обновление — ставим, когда качать больше нечего
 }
 
+// Опрос qBittorrent. Раньше — каждые 2 секунды всегда, даже без загрузок и со свёрнутым окном:
+// qBittorrent собирал список, лаунчер пересылал его в окно, и окно перерисовывалось.
+// Теперь частота зависит от обстановки, а одинаковый список повторно не отправляется.
+let lastSentDownloads = ''
+function statusPollDelay() {
+  const visible = !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized()
+  const active = lastQbList.some((t) => t.status === 'downloading' || t.status === 'moving') ||
+    httpList().some((d) => d.status === 'downloading')
+  if (!visible) return 15000
+  return active ? 2000 : 6000
+}
+
+let statusTick = null
+// окно развернули из трея или свёрнутого состояния — обновить список сразу, не дожидаясь 15 секунд
+function kickStatusPolling() {
+  if (!statusInterval || !statusTick) return
+  clearTimeout(statusInterval)
+  statusInterval = setTimeout(statusTick, 200)
+}
+
 function startStatusPolling() {
   if (statusInterval) return
-  statusInterval = setInterval(async () => {
+  const tick = statusTick = async () => {
     try {
       lastQbList = await qbGetTorrents()
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('torrent-updates', [...httpList(), ...lastQbList])
+        const list = [...httpList(), ...lastQbList]
+        const json = JSON.stringify(list)
+        if (json !== lastSentDownloads) {
+          lastSentDownloads = json
+          mainWindow.webContents.send('torrent-updates', list)
+        }
       }
     } catch {}
-  }, 2000)
+    statusInterval = setTimeout(tick, statusPollDelay())
+  }
+  statusInterval = setTimeout(tick, 2000)
 }
 
 // ============================================================
@@ -1761,12 +1807,17 @@ async function installGameImpl(gameId, opts = {}) {
       // не получилось без мастера — запускаем как обычно
       if (silent?.fallback) { installerPath = silent.fallback; sourcePath = silent.source }
     }
-    const launchRes = await launchInstaller(installerPath)
+    // Мастеру подставляем папку игр лаунчера: там лаунчер сам найдёт игру после установки
+    const expectedDir = uniqueDest(path.join(gamesDir, baseName))
+    const wizardType = detectInstallerType(installerPath)
+    const dirArgs = wizardType === 'inno' ? [`/DIR="${expectedDir}"`] : wizardType === 'nsis' ? [`/D=${expectedDir}`] : []
+    const launchRes = await launchInstaller(installerPath, dirArgs)
     if (launchRes?.error) return { error: 'Не удалось запустить установщик: ' + launchRes.error }
     registerGame({
       id: gameId, catalogId, name: baseName, installPath: '', exePath: null, kind: 'installer',
-      sourcePath, installedAt: Date.now(), playtimeMs: 0,
+      sourcePath, expectedDir, installedAt: Date.now(), playtimeMs: 0,
     })
+    watchWizardInstall(gameId)
     sendInstallProgress({ gameId, phase: 'installer', percent: -1 })
     waitProcessExit(launchRes.pid).then(() => {
       const entry = loadRegistry().find(g => g.id === gameId)
@@ -1918,8 +1969,16 @@ ipcMain.handle('install-game', async (e, gameId, opts) => {
   if (installingIds.has(gameId)) return { error: 'Игра уже устанавливается' }
   installingIds.add(gameId)
   activeInstalls++
+  // название из каталога (прямая загрузка или запомненное для торрента) — до установки:
+  // после неё запись загрузки удаляется
+  const catalogTitle = httpDownloads.get(gameId)?.gameTitle || loadDownloadTitles()[String(gameId).toLowerCase()] || ''
   try {
-    return await installGameImpl(gameId, { skipScan: opts?.skipScan === true })
+    const res = await installGameImpl(gameId, { skipScan: opts?.skipScan === true })
+    if (catalogTitle) {
+      const entry = loadRegistry().find((g) => g.id === gameId)
+      if (entry && entry.title !== catalogTitle) registerGame({ ...entry, title: catalogTitle })
+    }
+    return res
   } catch (err) {
     console.error('[Install]', err)
     return { error: 'Установка прервалась: ' + (err?.message || err) }
@@ -1970,7 +2029,75 @@ ipcMain.handle('notify-show', (e, opts) => {
   }
 })
 
-ipcMain.handle('installed-games', () => loadRegistry())
+// Игра, поставленная мастером репака, в папку, которую предложил лаунчер (expectedDir; у старых
+// записей — папка игр + имя игры). Раньше лаунчер ждал, пока игрок сам укажет exe, хотя игра уже
+// лежала там, куда он её направил. Установка считается законченной, когда есть exe игры и
+// деинсталлятор (Inno Setup пишет unins000.exe в самом конце) или папка не менялась 2 минуты.
+function wizardInstallDir(entry) {
+  const dirs = [entry.expectedDir, path.join(getGamesDir(), sanitizeName(entry.name) || '')].filter(Boolean)
+  const taken = new Set(loadRegistry().filter((g) => g.id !== entry.id && g.installPath).map((g) => path.resolve(g.installPath).toLowerCase()))
+  for (const dir of dirs) {
+    if (!fs.existsSync(dir) || taken.has(path.resolve(dir).toLowerCase())) continue
+    const exePath = rankGameExecutable(dir, entry.name)
+    if (!exePath) continue
+    let finished = false
+    try {
+      finished = fs.readdirSync(dir).some((n) => /^unins\d*\.exe$/i.test(n)) ||
+        Date.now() - fs.statSync(dir).mtimeMs > 2 * 60 * 1000
+    } catch { /* папку удаляют */ }
+    if (finished) return { dir, exePath }
+  }
+  return null
+}
+
+function adoptWizardInstalls(onlyId) {
+  let changed = false
+  for (const entry of loadRegistry()) {
+    if (onlyId && entry.id !== onlyId) continue
+    if (entry.kind !== 'installer' || entry.exePath || entry.installPath) continue
+    const found = wizardInstallDir(entry)
+    if (!found) continue
+    console.log('[Install] игра из мастера найдена:', found.exePath)
+    const { expectedDir: _d, ...rest } = entry
+    const next = { ...rest, installPath: found.dir, exePath: found.exePath, managed: true }
+    // установка закончена — установочные файлы больше не нужны (как при ручном выборе exe)
+    if (next.sourcePath && !isInside(found.exePath, next.sourcePath)) {
+      dropDownload(entry.id, next.sourcePath).catch(() => {})
+      delete next.sourcePath
+      delete next.setupPath
+    }
+    registerGame(next)
+    sendInstallProgress({ gameId: entry.id, catalogId: entry.catalogId || 0, phase: 'done', percent: 100 })
+    changed = true
+  }
+  return changed
+}
+
+// Пока открыт мастер (и некоторое время после: Inno передаёт работу копии во временной папке
+// и сам установщик завершается сразу), проверяем предложенную папку
+function watchWizardInstall(id) {
+  const started = Date.now()
+  const timer = setInterval(() => {
+    const entry = loadRegistry().find((g) => g.id === id)
+    if (!entry || entry.exePath || Date.now() - started > 3 * 60 * 60 * 1000) { clearInterval(timer); return }
+    // найдено — sendInstallProgress('done') внутри обновит карточку игры
+    if (adoptWizardInstalls(id)) clearInterval(timer)
+  }, 15000)
+}
+
+// Название из каталога для уже установленных игр (рендерер знает его по catalogId из библиотеки)
+ipcMain.handle('set-game-title', (e, id, title) => {
+  const value = String(title || '').trim().slice(0, 200)
+  const entry = loadRegistry().find((g) => g.id === id)
+  if (!entry || !value || entry.title === value) return false
+  registerGame({ ...entry, title: value })
+  return true
+})
+
+ipcMain.handle('installed-games', () => {
+  adoptWizardInstalls()
+  return loadRegistry()
+})
 ipcMain.handle('launch-game', async (e, id) => {
   let entry = loadRegistry().find(g => g.id === id)
   if (entry?.installPath) await unblockFolder(entry.installPath)
@@ -2003,11 +2130,11 @@ function startGameSession(entry) {
   playtime.track({ ...entry, lastPlayedAt: Date.now() }, () => {
     stopAchievements()
     // игра закрылась — сообщим рендереру (сброс статуса «Играет в …» + отчёт сессии)
-    try { mainWindow?.webContents.send('game-state', { running: false, name: entry.name, id: entry.id, catalogId: entry.catalogId || 0 }) } catch {}
+    try { mainWindow?.webContents.send('game-state', { running: false, name: installerModule.gameDisplayName(entry), id: entry.id, catalogId: entry.catalogId || 0 }) } catch {}
     onGameExited(entry)
   })
   // запущена — статус «Играет в …» для друзей + начало отсчёта сессии
-  try { mainWindow?.webContents.send('game-state', { running: true, name: entry.name, id: entry.id, catalogId: entry.catalogId || 0 }) } catch {}
+  try { mainWindow?.webContents.send('game-state', { running: true, name: installerModule.gameDisplayName(entry), id: entry.id, catalogId: entry.catalogId || 0 }) } catch {}
   onGameStarted(entry)
 }
 
@@ -2022,6 +2149,9 @@ async function scanExternalGameLaunches() {
   if (games.length === 0) return
   externalScanBusy = true
   try {
+    // дешёвая проверка по именам exe (tasklist); PowerShell с путями — только если exe игры запущен
+    const names = await playtime.listProcessNames()
+    if (names && !games.some((g) => names.has(path.basename(String(g.exePath)).toLowerCase()))) return
     const procs = await playtime.listProcesses()
     for (const g of games) {
       if (procs.some((p) => playtime.isGameProcess(p, g))) {
@@ -2216,7 +2346,8 @@ ipcMain.handle('install-reinstall-wizard', async (e, id) => {
   const launchRes = await launchInstaller(entry.setupPath, dirArgs)
   if (launchRes?.error) return { error: 'Не удалось запустить установщик: ' + launchRes.error }
   const { crackMissing: _c, silent: _s, managed: _m, crackOptions: _o, ...rest } = entry
-  registerGame({ ...rest, installPath: '', exePath: null, kind: 'installer' })
+  registerGame({ ...rest, installPath: '', exePath: null, kind: 'installer', expectedDir: suggestedDir })
+  watchWizardInstall(id)
   sendInstallProgress({ gameId: id, catalogId: entry.catalogId || 0, phase: 'installer', percent: -1 })
   waitProcessExit(launchRes.pid).then(() => {
     const cur = loadRegistry().find((g) => g.id === id)
@@ -2402,7 +2533,62 @@ function markStorageSetupForExistingUsers() {
 
 ipcMain.handle('paths:get', () => pathsView())
 
-ipcMain.handle('paths:set', (e, patch) => {
+// Папка лаунчера на диске: создать и проверить, что в неё можно писать (папка могла остаться
+// от другой установки Windows и быть доступной только для чтения)
+function tryDriveFolder(dir) {
+  try {
+    fs.mkdirSync(dir, { recursive: true })
+    const probe = path.join(dir, `.lustre-write-${process.pid}`)
+    fs.writeFileSync(probe, 'ok')
+    fs.rmSync(probe, { force: true })
+    return null
+  } catch (err) {
+    return err?.code || 'UNKNOWN'
+  }
+}
+
+function runPs(script, timeout = 15000) {
+  return new Promise((resolve) => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, timeout }, (err, stdout) => {
+      resolve(err ? '' : String(stdout || '').trim())
+    })
+  })
+}
+
+// Создать папку с правами администратора и выдать текущему пользователю право на изменение
+// (окно запроса прав Windows покажет сама система)
+async function fixDriveFolderAccess(drive, dir) {
+  const root = path.join(drive, 'Lustre')
+  const user = `${process.env.USERDOMAIN || ''}\\${process.env.USERNAME || ''}`.replace(/^\\/, '')
+  const q = (s) => `'${String(s).replace(/'/g, "''")}'`
+  const inner = [
+    `New-Item -ItemType Directory -Force -Path ${q(dir)} | Out-Null`,
+    `icacls ${q(root)} /grant ${q(`${user}:(OI)(CI)M`)} /T /C | Out-Null`,
+  ].join('; ')
+  const encoded = Buffer.from(inner, 'utf16le').toString('base64')
+  const outer = `try { Start-Process powershell.exe -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '-NoProfile','-NonInteractive','-EncodedCommand','${encoded}'; 'OK' } catch { 'CANCEL' }`
+  return (await runPs(outer, 120000)) === 'OK'
+}
+
+/** Понятная причина, почему лаунчер не может писать на диск */
+async function driveErrorText(drive, code) {
+  const d = drive.slice(0, 2)
+  if (code === 'EROFS') return `Диск ${d} доступен только для чтения (CD/DVD, подключённый образ или флешка с защитой от записи). Выберите другой диск.`
+  if (code === 'ENOSPC') return `На диске ${d} нет свободного места.`
+  if (code === 'EPERM' || code === 'EACCES') {
+    const cfa = await runPs('(Get-MpPreference).EnableControlledFolderAccess')
+    if (cfa === '1') {
+      return `Защитник Windows не даёт лаунчеру писать на диск ${d}: включён «Контролируемый доступ к папкам». ` +
+        'Откройте «Безопасность Windows» → «Защита от вирусов и угроз» → «Управление защитой от программ-шантажистов» → ' +
+        '«Разрешить работу приложения через контролируемый доступ к папкам» и добавьте Lustre.'
+    }
+    return `Windows не разрешает создавать папки на диске ${d} (нет прав на запись — часто так бывает с диском от другой установки Windows). ` +
+      `Создайте папку ${d}\\Lustre вручную и в её свойствах на вкладке «Безопасность» дайте своей учётной записи право «Изменение», либо выберите другой диск.`
+  }
+  return `Нет доступа к диску ${d}: лаунчер не может создать на нём свою папку (${code}).`
+}
+
+ipcMain.handle('paths:set', async (e, patch) => {
   const input = patch && typeof patch === 'object' ? patch : {}
   const next = {}
   for (const key of PATH_FLAGS) if (typeof input[key] === 'boolean') next[key] = input[key]
@@ -2413,11 +2599,24 @@ ipcMain.handle('paths:set', (e, patch) => {
     // на системном диске — папки по умолчанию в данных лаунчера
     const value = drive === systemDrive() ? '' : drive
     if (value) {
-      try {
-        fs.mkdirSync(path.join(drive, 'Lustre', key === 'downloadDrive' ? 'Downloads' : 'Games'), { recursive: true })
-      } catch {
-        return pathsView({ error: `Нет доступа к диску ${drive.slice(0, 2)}: лаунчер не может создать на нём свою папку` })
+      const dir = path.join(drive, 'Lustre', key === 'downloadDrive' ? 'Downloads' : 'Games')
+      let code = tryDriveFolder(dir)
+      // нет прав — предлагаем исправить с правами администратора и пробуем ещё раз
+      if (code === 'EPERM' || code === 'EACCES') {
+        const win = BrowserWindow.fromWebContents(e.sender) || mainWindow
+        const { response } = await dialog.showMessageBox(win, {
+          type: 'warning',
+          title: 'Нет доступа к диску',
+          message: `Windows не разрешает лаунчеру создать папку на диске ${drive.slice(0, 2)}`,
+          detail: `Лаунчер может создать папку ${path.join(drive, 'Lustre')} с правами администратора и разрешить вашей учётной записи записывать в неё. Windows попросит подтверждение.`,
+          buttons: ['Исправить', 'Отмена'],
+          defaultId: 0,
+          cancelId: 1,
+          noLink: true,
+        })
+        if (response === 0 && await fixDriveFolderAccess(drive, dir)) code = tryDriveFolder(dir)
       }
+      if (code) return pathsView({ error: await driveErrorText(drive, code) })
     }
     next[key] = value
   }
@@ -2824,6 +3023,9 @@ function createWindow() {
     mainWindow.hide()
     openUpdateWindow()
   })
+  // из трея или свёрнутого окна — список загрузок обновляется сразу (в фоне опрос реже)
+  mainWindow.on('show', kickStatusPolling)
+  mainWindow.on('restore', kickStatusPolling)
   mainWindow.on('closed', () => { mainWindow = null })
 }
 
@@ -3022,6 +3224,7 @@ function showLauncherToast(toast) {
 }
 
 function deliverToast(pos, toast) {
+  clearTimeout(toastIdleTimer)
   const w = ensureToastWindow()
   w.setBounds({ ...pos, width: TOAST_W, height: TOAST_H })
   const deliver = () => {
@@ -3088,7 +3291,7 @@ function insideScreenshots(p) {
 }
 
 function onGameStarted(entry) {
-  currentGame = { id: entry.id, name: entry.name, catalogId: entry.catalogId || 0, startedAt: Date.now(), playtimeMs: entry.playtimeMs || 0 }
+  currentGame = { id: entry.id, name: installerModule.gameDisplayName(entry), catalogId: entry.catalogId || 0, startedAt: Date.now(), playtimeMs: entry.playtimeMs || 0 }
   syncOverlayHotkeys()
   const prefs = loadOverlayPrefs()
   if (!prefs.enabled) return
@@ -3097,7 +3300,7 @@ function onGameStarted(entry) {
   sendOverlayState()
   setTimeout(() => {
     if (currentGame?.id === entry.id) {
-      showGameToast({ kind: 'hint', title: entry.name, body: `${hotkeyLabel(prefs.hotkey)} — оверлей Lustre` })
+      showGameToast({ kind: 'hint', title: currentGame.name, body: `${hotkeyLabel(prefs.hotkey)} — оверлей Lustre` })
     }
   }, 5000)
 }
@@ -3107,8 +3310,14 @@ function onGameExited(entry) {
   currentGame = null
   syncOverlayHotkeys()
   hideGameOverlay()
-  if (overlayToastWindow && !overlayToastWindow.isDestroyed()) overlayToastWindow.hide()
+  if (overlayToastWindow && !overlayToastWindow.isDestroyed()) { overlayToastWindow.hide(); scheduleToastWindowClose() }
   sendOverlayState()
+  // окно оверлея нужно только во время игры: через минуту после выхода освобождаем память
+  setTimeout(() => {
+    if (currentGame || !overlayWindow || overlayWindow.isDestroyed() || overlayWindow.isVisible()) return
+    overlayWindow.destroy()
+    overlayWindow = null
+  }, 60_000)
 }
 
 ipcMain.handle('toggle-game-overlay', () => toggleGameOverlay())
@@ -3123,10 +3332,23 @@ ipcMain.on('overlay-open-screenshots-folder', () => {
   try { fs.mkdirSync(dir, { recursive: true }) } catch { /* ignore */ }
   void shell.openPath(dir)
 })
+// Скрытое окно уведомлений держало ~200 МБ памяти до выхода из лаунчера: уведомлений нет
+// и игра не идёт — через минуту закрываем его (следующее уведомление создаст окно заново)
+let toastIdleTimer = null
+function scheduleToastWindowClose() {
+  clearTimeout(toastIdleTimer)
+  toastIdleTimer = setTimeout(() => {
+    if (currentGame || !overlayToastWindow || overlayToastWindow.isDestroyed() || overlayToastWindow.isVisible()) return
+    overlayToastWindow.destroy()
+    overlayToastWindow = null
+  }, 60_000)
+}
+
 ipcMain.on('overlay-toasts-empty', () => {
   if (overlayToastWindow && !overlayToastWindow.isDestroyed()) {
     overlayToastWindow.setIgnoreMouseEvents(true, { forward: true })
     overlayToastWindow.hide()
+    scheduleToastWindowClose()
   }
 })
 // Курсор над карточкой уведомления: на рабочем столе ловим клики, в игре — всегда насквозь
@@ -3532,7 +3754,7 @@ async function stopManagedQb() {
 
 let qbStopRequested = false
 app.on('before-quit', (e) => {
-  if (statusInterval) clearInterval(statusInterval)
+  if (statusInterval) clearTimeout(statusInterval)
   if (qbStopRequested || !qbIsManaged() || !qbCookie) return
   e.preventDefault()
   qbStopRequested = true

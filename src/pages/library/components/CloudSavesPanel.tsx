@@ -10,7 +10,7 @@ import {
 
 const when = (iso: string) => new Date(iso).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
-const SOURCE: Record<SaveFolder['source'], string> = { user: 'выбрана вами', catalog: 'из каталога', emulator: 'папка репака', guess: 'угадана по названию' };
+const SOURCE: Record<SaveFolder['source'], string> = { user: 'выбрана вами', catalog: 'из каталога', emulator: 'папка репака', engine: 'по файлам игры', guess: 'угадана по названию' };
 
 const folderWord = (n: number) => (n % 10 === 1 && n % 100 !== 11 ? 'папка' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'папки' : 'папок');
 

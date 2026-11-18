@@ -37,13 +37,25 @@ function managedIniPath(profileDir) {
   return path.join(profileDir, 'qBittorrent', 'config', 'qBittorrent.ini');
 }
 
-// Веб-интерфейс только на 127.0.0.1 и со случайным паролем. Остальные настройки не трогаем:
-// слушающий порт, скорость и очередь qBittorrent хранит сам.
+// Веб-интерфейс только на 127.0.0.1 и со случайным паролем, умеренные лимиты памяти и соединений.
+// Слушающий порт, скорость и очередь qBittorrent хранит сам.
 function writeManagedConfig(profileDir, { port, pass }) {
   const ini = managedIniPath(profileDir);
   fs.mkdirSync(path.dirname(ini), { recursive: true });
   return patchIniSections(ini, {
     LegalNotice: { Accepted: 'true' },
+    // Нагрузка на систему: по умолчанию qBittorrent держит до 512 МБ в памяти, до 500 соединений
+    // и раздаёт бесконечно — лаунчер в фоне заметно грузил слабые ПК
+    Application: { MemoryWorkingSetLimit: '256' },
+    BitTorrent: {
+      'Session\\MaxConnections': '300',
+      'Session\\MaxConnectionsPerTorrent': '100',
+      'Session\\MaxUploads': '20',
+      'Session\\MaxUploadsPerTorrent': '4',
+      // после скачивания — раздача не дольше 2 часов, затем торрент останавливается (ShareLimitAction=Stop)
+      'Session\\GlobalMaxSeedingMinutes': '120',
+      'Session\\ShareLimitAction': 'Stop',
+    },
     Preferences: {
       'General\\StartMinimized': 'true',
       'General\\NoSplashScreen': 'true',

@@ -106,6 +106,16 @@ export default function MainLayout({ children }: { children?: ReactNode }) {
           title: String(e.game?.title || ''),
         }));
         resolvePendingLaunchRef.current?.();
+        // Установленным играм — название из каталога: иначе оверлей и «Играет в …» показывали
+        // имя раздачи («stardew_valley_78674»)
+        const titles = new Map(libraryRef.current.map((g) => [g.id, g.title]));
+        const electron = (window as any).electron;
+        void electron?.installedGames?.().then((list: { id: string; catalogId?: number; title?: string }[]) => {
+          for (const g of list || []) {
+            const title = titles.get(Number(g.catalogId) || 0);
+            if (title && g.title !== title) void electron?.setGameTitle?.(g.id, title);
+          }
+        }).catch(() => {});
       })
       .catch(() => { /* офлайн — обновим при следующем событии */ });
   };

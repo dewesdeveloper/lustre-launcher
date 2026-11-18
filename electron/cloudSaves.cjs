@@ -175,6 +175,8 @@ function guessDirs(vars, title, developer) {
       const n = norm(name)
       if (GUESS_SKIP.has(n)) continue
       if (keys.includes(n)) { found.push(path.join(root, name)); continue }
+      // папка начинается с названия: «Scarecrow» → «ScarecrowChapterBack» (только для названий от 5 букв)
+      if (keys.some((k) => k.length >= 5 && n.startsWith(k))) { found.push(path.join(root, name)); continue }
       if (devKeys.includes(n)) {
         for (const child of subdirs(path.join(root, name))) {
           if (keys.includes(norm(child))) found.push(path.join(root, name, child))
@@ -205,6 +207,78 @@ function unrealSaveDirs(vars, gameDir) {
     for (const d of [path.join(saved, 'SaveGames'), saved]) {
       try { if (fs.statSync(d).isDirectory()) { out.push(d); break } } catch { /* нет папки */ }
     }
+  }
+  return out
+}
+
+/** data.win игры GameMaker в корне игры или на уровень глубже */
+function findDataWin(gameDir) {
+  for (const d of [gameDir, ...subdirs(gameDir).map((n) => path.join(gameDir, n))]) {
+    const f = path.join(d, 'data.win')
+    try { if (fs.statSync(f).isFile()) return f } catch { /* нет */ }
+  }
+  return ''
+}
+
+/**
+ * Игры на GameMaker: внутреннее имя проекта записано в data.win (чанк GEN8) — сохранения лежат
+ * в %LOCALAPPDATA%\<Проект> или %APPDATA%\<Проект>. Название в каталоге с ним часто не совпадает:
+ * «Scarecrow: 90s Crime Story» хранит сохранения в Roaming\ScarecrowChapterBack.
+ */
+function gameMakerNames(gameDir) {
+  const file = gameDir && findDataWin(gameDir)
+  if (!file) return []
+  let fd
+  try {
+    fd = fs.openSync(file, 'r')
+    const size = fs.fstatSync(fd).size
+    const read = (pos, len) => { const b = Buffer.alloc(len); fs.readSync(fd, b, 0, len, pos); return b }
+    const head = read(0, 16)
+    if (head.toString('latin1', 0, 4) !== 'FORM' || head.toString('latin1', 8, 12) !== 'GEN8') return []
+    const gen = read(16, 44)
+    // строки GameMaker: указатель на текст, перед ним uint32 длина
+    const str = (ptr) => {
+      if (!ptr || ptr < 4 || ptr >= size) return ''
+      const len = read(ptr - 4, 4).readUInt32LE(0)
+      if (!len || len > 128) return ''
+      const s = read(ptr, len).toString('utf8')
+      return /^[\w .()-]+$/.test(s) ? s : ''
+    }
+    // FileName (+4) и Name (+40) — обычно одно и то же имя проекта
+    return [...new Set([str(gen.readUInt32LE(4)), str(gen.readUInt32LE(40))].filter(Boolean))]
+  } catch {
+    return []
+  } finally {
+    if (fd !== undefined) try { fs.closeSync(fd) } catch { /* ignore */ }
+  }
+}
+
+/** Игры на Unity: <exe>_Data/app.info — «Компания\nПродукт», сохранения в LocalLow\Компания\Продукт */
+function unityProducts(gameDir) {
+  const out = []
+  for (const name of gameDir ? subdirs(gameDir) : []) {
+    if (!/_Data$/i.test(name)) continue
+    try {
+      const [company, product] = fs.readFileSync(path.join(gameDir, name, 'app.info'), 'utf8').split(/\r?\n/).map((s) => s.trim())
+      if (company && product && !/[\\/:*?"<>|]/.test(company + product)) out.push({ company, product })
+    } catch { /* нет app.info */ }
+  }
+  return out
+}
+
+/** Папки сохранений, определённые по файлам самой игры (движок знает, куда пишет) */
+function engineSaveDirs(vars, gameDir) {
+  const out = [...unrealSaveDirs(vars, gameDir)]
+  const isDir = (d) => { try { return fs.statSync(d).isDirectory() } catch { return false } }
+  for (const n of gameMakerNames(gameDir)) {
+    for (const root of [vars.LOCALAPPDATA, vars.APPDATA]) {
+      const d = path.join(root, n)
+      if (isDir(d)) out.push(d)
+    }
+  }
+  for (const { company, product } of unityProducts(gameDir)) {
+    const d = path.join(vars.LOCALLOW, company, product)
+    if (isDir(d)) out.push(d)
   }
   return out
 }
@@ -262,8 +336,10 @@ function locate(app, { patterns = [], gameDir = '', appId = '', override = '', t
   const emulator = candidates.filter((c) => c.source === 'emulator' && c.files > 0).sort((a, b) => b.newest - a.newest)[0]
   if (emulator) return { best: emulator, candidates }
 
-  // путей нет (или они пусты) — игра на Unreal Engine: папка проекта из файлов игры
-  for (const d of unrealSaveDirs(vars, gameDir)) add(d, 'guess')
+  // путей нет (или они пусты) — папка по файлам игры: Unreal, GameMaker, Unity
+  for (const d of engineSaveDirs(vars, gameDir)) add(d, 'engine')
+  const engine = combine(candidates.filter((c) => c.source === 'engine'), 'engine')
+  if (engine) return { best: engine, candidates }
   // и угадываем по названию
   if (title) for (const d of guessDirs(vars, title, developer)) add(d, 'guess')
   const guess = combine(candidates.filter((c) => c.source === 'guess'), 'guess')
