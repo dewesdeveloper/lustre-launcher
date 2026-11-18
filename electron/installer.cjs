@@ -184,7 +184,9 @@ function rankGameExecutable(folderPath, title) {
     const candidates = rels.filter(r => {
       const base = path.basename(r)
       return /\.exe$/i.test(base) && !INSTALLER_NAME_RE.test(base) &&
-        !EXE_EXCLUDE_RE.test(base) && !isRedistributablePath(r)
+        !EXE_EXCLUDE_RE.test(base) && !isRedistributablePath(r) &&
+        // установщик с «игровым» именем (Rust_2636.exe = Inno Setup) — не игра
+        !isInstallerStub(path.join(folderPath, r))
     })
     if (candidates.length === 0) return null
     if (candidates.length === 1) return path.join(folderPath, candidates[0])

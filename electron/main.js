@@ -2048,6 +2048,9 @@ function wizardInstallDir(entry) {
   const taken = new Set(loadRegistry().filter((g) => g.id !== entry.id && g.installPath).map((g) => path.resolve(g.installPath).toLowerCase()))
   for (const dir of dirs) {
     if (!fs.existsSync(dir) || taken.has(path.resolve(dir).toLowerCase())) continue
+    // в этой папке лежат сами установочные файлы (раздачу приняли за игру) — это не установка
+    if (entry.sourcePath && (samePath(dir, entry.sourcePath) || isInside(entry.sourcePath, dir))) continue
+    if (entry.setupPath && isInside(entry.setupPath, dir)) continue
     const exePath = rankGameExecutable(dir, entry.name)
     if (!exePath) continue
     let finished = false
@@ -2437,13 +2440,15 @@ ipcMain.handle('install-from-setup', async (e, id) => {
 // превращаем запись в «нужно установить», файлы установщика не трогаем
 function fixInstallerMistakenForGame() {
   for (const g of loadRegistry()) {
-    if (g.kind !== 'portable' || !g.exePath || g.setupPath) continue
+    // portable — исходная ошибка; needsSetup с exe — запись, которую 0.1.21 вернул поиском после мастера
+    const mistaken = (g.kind === 'portable' && !g.setupPath) || (g.needsSetup && g.exePath && samePath(g.exePath, g.setupPath || ''))
+    if (!mistaken || !g.exePath) continue
     if (!fs.existsSync(g.exePath) || !installerModule.isInstallerStub(g.exePath)) continue
     console.warn('[Install] вместо игры записан установщик, нужна установка:', g.name)
     const { crackChecked: _k, crackMissing: _c, crackOptions: _o, ...rest } = g
     registerGame({
       ...rest, kind: 'installer', exePath: null, installPath: '',
-      setupPath: g.exePath, sourcePath: g.installPath || path.dirname(g.exePath), needsSetup: true,
+      setupPath: g.exePath, sourcePath: g.sourcePath || g.installPath || path.dirname(g.exePath), needsSetup: true,
     })
   }
 }
