@@ -2365,6 +2365,89 @@ ipcMain.handle('install-reinstall-wizard', async (e, id) => {
   })
   return { ok: true, suggestedDir, gamesDir: getGamesDir() }
 })
+// Установка из сохранённого установщика: игра в библиотеке, но вместо неё лежит установщик
+// (раздачу приняли за готовую игру — exe оказался установщиком Inno Setup с «игровым» именем).
+// Ставим тихо в папку игр, как обычный репак; не получилось — открываем мастер.
+ipcMain.handle('install-from-setup', async (e, id) => {
+  const entry = loadRegistry().find((g) => g.id === id)
+  if (!entry?.setupPath || !fs.existsSync(entry.setupPath)) {
+    return { error: 'Установщик не сохранился — удалите игру и скачайте её заново' }
+  }
+  if (installingIds.has(id)) return { error: 'Установка уже идёт' }
+  installingIds.add(id)
+  const catalogId = entry.catalogId || 0
+  const gamesDir = getGamesDir()
+  const name = sanitizeName(entry.title || entry.name) || 'Game'
+  const source = entry.sourcePath || path.dirname(entry.setupPath)
+  try {
+    const type = detectInstallerType(entry.setupPath)
+    if (type) {
+      const noSpace = await checkFreeSpace(source, gamesDir, 2)
+      if (noSpace) return { error: noSpace }
+      const target = uniqueDest(path.join(gamesDir, name))
+      sendInstallProgress({ gameId: id, catalogId, phase: 'install', percent: -1, silent: true })
+      const sizeTimer = setInterval(async () => {
+        sendInstallProgress({ gameId: id, catalogId, phase: 'install', percent: -1, silent: true, bytes: await pathSize(target) })
+      }, 3000)
+      let res
+      try { res = await runInstallerSilently(entry.setupPath, type, target) } finally { clearInterval(sizeTimer) }
+      if (res.cancelled) {
+        sendInstallProgress({ gameId: id, catalogId, phase: 'idle', percent: -1 })
+        return { error: 'Установка отменена: установщику нужны права администратора' }
+      }
+      if (res.ok) {
+        const exePath = rankGameExecutable(target, name)
+        const crack = exePath ? await resolveCrack(target, [source]) : null
+        const keepSetup = !exePath || crack?.status === 'steam-only' || crack?.status === 'choose'
+        const { setupPath: _s, sourcePath: _p, crackMissing: _c, crackOptions: _o, crackChecked: _k, ...rest } = entry
+        registerGame({
+          ...rest, installPath: target, managed: true, exePath, kind: 'installer', silent: true,
+          ...(keepSetup ? { sourcePath: source, setupPath: entry.setupPath } : {}),
+          ...crackFields(crack),
+        })
+        if (!keepSetup) await dropDownload(id, source)
+        sendInstallProgress({ gameId: id, catalogId, phase: exePath ? 'done' : 'idle', percent: exePath ? 100 : -1 })
+        return exePath ? { ok: true, exePath } : { ok: true, message: `Игра установлена в «${target}», но файл запуска не найден. Укажите exe на странице игры.` }
+      }
+      console.warn('[Install] тихая установка из установщика не удалась, открываем мастер:', res.error || `код ${res.code}`)
+      if (isInside(target, gamesDir)) await fs.promises.rm(target, { recursive: true, force: true }).catch(() => {})
+    }
+    // мастер установщика: папку игр подставляем, лаунчер найдёт игру сам
+    const suggestedDir = uniqueDest(path.join(gamesDir, name))
+    const dirArgs = type === 'inno' ? [`/DIR="${suggestedDir}"`] : type === 'nsis' ? [`/D=${suggestedDir}`] : []
+    const launchRes = await launchInstaller(entry.setupPath, dirArgs)
+    if (launchRes?.error) {
+      sendInstallProgress({ gameId: id, catalogId, phase: 'idle', percent: -1 })
+      return { error: 'Не удалось запустить установщик: ' + launchRes.error }
+    }
+    registerGame({ ...entry, installPath: '', exePath: null, kind: 'installer', expectedDir: suggestedDir })
+    watchWizardInstall(id)
+    sendInstallProgress({ gameId: id, catalogId, phase: 'installer', percent: -1 })
+    waitProcessExit(launchRes.pid).then(() => {
+      const cur = loadRegistry().find((g) => g.id === id)
+      if (cur && !cur.exePath) sendInstallProgress({ gameId: id, catalogId, phase: 'idle', percent: -1 })
+    })
+    return { ok: true, wizard: true, suggestedDir }
+  } finally {
+    installingIds.delete(id)
+  }
+})
+
+// Игра «установлена» как портативная, а её exe — установщик (Inno Setup / NSIS с игровым именем):
+// превращаем запись в «нужно установить», файлы установщика не трогаем
+function fixInstallerMistakenForGame() {
+  for (const g of loadRegistry()) {
+    if (g.kind !== 'portable' || !g.exePath || g.setupPath) continue
+    if (!fs.existsSync(g.exePath) || !installerModule.isInstallerStub(g.exePath)) continue
+    console.warn('[Install] вместо игры записан установщик, нужна установка:', g.name)
+    const { crackChecked: _k, crackMissing: _c, crackOptions: _o, ...rest } = g
+    registerGame({
+      ...rest, kind: 'installer', exePath: null, installPath: '',
+      setupPath: g.exePath, sourcePath: g.installPath || path.dirname(g.exePath), needsSetup: true,
+    })
+  }
+}
+
 // Игрок выбрал один из нескольких кряков, найденных в раздаче
 ipcMain.handle('install-apply-crack', async (e, id, optionId) => {
   const entry = loadRegistry().find((g) => g.id === id)
@@ -3630,6 +3713,7 @@ app.whenReady().then(() => {
   try { markStorageSetupForExistingUsers() } catch (err) { console.warn('[Storage]', err?.message || err) }
   // игры, поставленные тихо до появления проверки кряка, проверяем один раз
   setTimeout(() => { void checkInstalledCracks() }, 20_000)
+  try { fixInstallerMistakenForGame() } catch (err) { console.warn('[Install]', err?.message || err) }
   // Свои папки скачивания и установки больше не выбираются: переводим их на выбор диска
   try { migrateCustomPaths() } catch (err) { console.error('[Main] перенос настроек путей:', err) }
   // Локальный сервер перевода для Unity-игр (XUnity.AutoTranslator шлёт сюда тексты во время игры).

@@ -183,6 +183,7 @@ contextBridge.exposeInMainWorld('electron', {
   uninstallGame: (id) => ipcRenderer.invoke('uninstall-game', id),
   // после тихой установки не нашлось кряка: переустановить с мастером репака или оставить как есть
   reinstallWithWizard: (id) => ipcRenderer.invoke('install-reinstall-wizard', id),
+  installFromSetup: (id) => ipcRenderer.invoke('install-from-setup', id),
   crackDismiss: (id) => ipcRenderer.invoke('install-crack-dismiss', id),
   applyCrack: (id, optionId) => ipcRenderer.invoke('install-apply-crack', id, optionId),
   revealGame: (id) => ipcRenderer.invoke('reveal-game', id),

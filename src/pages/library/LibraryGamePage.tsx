@@ -70,6 +70,7 @@ export default function LibraryGamePage() {
   const [submenuOpen, setSubmenuOpen] = useState(false);
   const [shortcutMsg, setShortcutMsg] = useState('');
   const [installing, setInstalling] = useState(false);
+  const [setupBusy, setSetupBusy] = useState(false);
   // установка этой игры уже идёт в фоне (запущена со страницы загрузок или раньше)
   const [bgInstall, setBgInstall] = useState(false);
   const [installError, setInstallError] = useState('');
@@ -323,6 +324,26 @@ export default function LibraryGamePage() {
     await startDownload({ kind: 'torrent', magnet_uri: game?.magnet_uri });
   };
 
+  // Установка из скачанного установщика (тихо, при неудаче — мастер установщика)
+  const installFromSetup = async () => {
+    if (!installed?.id) return;
+    setSetupBusy(true);
+    try {
+      const res = await electron?.installFromSetup?.(installed.id);
+      if (res?.error) await dlg.alert({ title: 'Не удалось установить', message: res.error });
+      else if (res?.wizard) {
+        await dlg.alert({
+          title: 'Откроется установщик',
+          message: `Установить без мастера не получилось — запущен установщик «${game?.title || installed.name}». ` +
+            `Папка игр лаунчера уже подставлена${res.suggestedDir ? `: «${res.suggestedDir}»` : ''} — тогда лаунчер сам найдёт игру.`,
+        });
+      } else if (res?.message) await dlg.alert({ title: 'Игра установлена', message: res.message });
+    } finally {
+      setSetupBusy(false);
+      refreshInstalled();
+    }
+  };
+
   const createShortcut = async () => {
     if (!installed?.id) return;
     const res = await electron?.createShortcut?.(installed.id);
@@ -421,7 +442,18 @@ export default function LibraryGamePage() {
       <div className="relative z-10 -mt-[60px] px-8 max-md:px-4">
         <div className="tl-panel flex flex-wrap items-center gap-x-8 gap-y-4 border-[var(--line-2)] bg-[var(--panel)]/92 p-4 backdrop-blur-xl">
           {installed ? (
-            !installed.exePath ? (
+            !installed.exePath && (installed as { setupPath?: string }).setupPath ? (
+              // в библиотеке установщик, а не игра (раздачу приняли за готовую игру) — ставим из него
+              <button
+                onClick={installFromSetup}
+                disabled={bgInstall || setupBusy}
+                title={bgInstall ? 'Установка идёт в фоне. Если открылись окна установщика — завершите их.' : 'Установить игру из скачанного установщика'}
+                className="tl-btn solid h-12 min-w-[180px] justify-center px-8 text-[13px] disabled:opacity-60"
+              >
+                {bgInstall || setupBusy ? <Loader2 size={16} className="animate-spin" /> : <MonitorSmartphone size={16} />}
+                {bgInstall || setupBusy ? 'Идёт установка' : 'Установить'}
+              </button>
+            ) : !installed.exePath ? (
               <button onClick={pickExe} disabled={pickingExe} title="Укажите exe игры, чтобы появился запуск" className="tl-btn solid h-12 px-7 text-[12px]">
                 {pickingExe ? <Loader2 size={16} className="animate-spin" /> : <FolderSearch size={16} />}
                 Указать файл игры

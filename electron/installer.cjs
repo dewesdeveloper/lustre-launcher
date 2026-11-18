@@ -404,6 +404,23 @@ function detectInstallerType(file) {
   return null
 }
 
+// Надёжные признаки установщика внутри exe (а не просто упоминание «Inno Setup» в игре):
+// заголовок данных Inno Setup и подпись NSIS. Деинсталлятор unins000.exe отсеивается по имени раньше.
+const STUB_MARKERS = ['Inno Setup Setup Data', 'Nullsoft Install System', 'NullsoftInst']
+const STUB_SCAN_BYTES = 4 * 1024 * 1024
+
+function isInstallerStub(file) {
+  try {
+    const fd = fs.openSync(file, 'r')
+    try {
+      const size = Math.min(fs.fstatSync(fd).size, STUB_SCAN_BYTES)
+      const buf = Buffer.alloc(size)
+      fs.readSync(fd, buf, 0, size, 0)
+      return STUB_MARKERS.some((m) => buf.includes(Buffer.from(m, 'latin1')) || buf.includes(Buffer.from(m, 'utf16le')))
+    } finally { fs.closeSync(fd) }
+  } catch { return false }
+}
+
 // Ключи тихой установки в указанную папку
 function silentInstallCommand(file, type, dir) {
   if (type === 'inno') {
@@ -585,7 +602,7 @@ function detectInstall(contentPath) {
       if (ARCHIVE_FILE_RE.test(name)) {
         return { kind: 'archive', root: path.dirname(contentPath), archivePath: contentPath, exePath: null }
       }
-      if (INSTALLER_NAME_RE.test(name) || EXE_EXCLUDE_RE.test(name) || /\.msi$/i.test(name)) {
+      if (INSTALLER_NAME_RE.test(name) || EXE_EXCLUDE_RE.test(name) || /\.msi$/i.test(name) || (/\.exe$/i.test(name) && isInstallerStub(contentPath))) {
         return { kind: 'installer', root: path.dirname(contentPath), installerPath: contentPath }
       }
       return { kind: 'portable', root: path.dirname(contentPath), gameFolder: path.dirname(contentPath), singleFile: contentPath, exePath: contentPath }
@@ -617,6 +634,15 @@ function detectInstall(contentPath) {
       /\.exe$/i.test(f.name) && !INSTALLER_NAME_RE.test(f.name) && !EXE_EXCLUDE_RE.test(f.name)
     )
     exes.sort((a, b) => (a.depth - b.depth) || (b.size - a.size))
+
+    // Установщик с «игровым» именем: Rust_2636_5.11.2026.exe + части .bin — это Inno Setup, но
+    // в имени нет «setup», и лаунчер принимал его за игру. Смотрим внутрь exe в корне раздачи:
+    // если все они — установщики, это репак.
+    const rootExes = exes.filter((f) => f.depth === 0)
+    if (rootExes.length > 0 && rootExes.every((f) => isInstallerStub(f.path))) {
+      return { kind: 'installer', root, installerPath: rootExes.sort((a, b) => b.size - a.size)[0].path }
+    }
+
     const exePath = exes[0]?.path || null
 
     // Установщик в корне раздачи, а exe — только глубже (утилиты, папка «Redist» и т. п.):
@@ -1285,6 +1311,7 @@ module.exports = {
   detectInstallerType,
   silentInstallCommand,
   runInstallerSilently,
+  isInstallerStub,
   isProtectedPath,
   isInside,
   samePath,
