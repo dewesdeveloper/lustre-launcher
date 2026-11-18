@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ShieldAlert } from 'lucide-react';
-import { softThreatKind } from '../../../api/scanReports';
+import { isLikelyFalsePositive, softThreatKind } from '../../../api/scanReports';
 
 // Слово, которое нужно ввести вручную (как имя репозитория при удалении на GitHub):
 // случайный клик или Enter не должны ставить игру, в которой Защитник нашёл угрозу.
@@ -53,7 +53,7 @@ export default function ThreatInstallDialog({ gameName, threats, onCancel, onCon
             </h3>
             <p className="tl-term mt-1.5 text-[15px] leading-relaxed text-pearl/75">
               В скачанных файлах игры «{gameName}» обнаружено:{' '}
-              <span className={`break-words ${pua ? 'text-amber-300' : 'text-red-300'}`}>{threats.length ? threats.join(', ') : 'угроза без названия'}</span>.
+              {threats.length ? threats.map((t, i) => (<span key={t}>{i > 0 && ', '}<span className={`break-words ${pua || /^PUA:/i.test(t) || isLikelyFalsePositive(t) ? 'text-amber-300' : 'text-red-300'}`}>{t}</span></span>)) : <span className='text-red-300'>угроза без названия</span>}.
             </p>
             {soft === 'pua' && (
               <p className="tl-term mt-2 text-[14px] leading-relaxed text-amber-200/80">

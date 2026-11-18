@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertTriangle, Loader2, ShieldCheck, ShieldQuestion, X } from 'lucide-react';
-import { getScanSummary, softThreatKind, sourceKeyFor, type ScanSourceSummary } from '../../../api/scanReports';
+import { getScanSummary, isLikelyFalsePositive, softThreatKind, sourceKeyFor, type ScanSourceSummary } from '../../../api/scanReports';
 import type { DownloadSource } from '../../market/components/SourcePickerModal';
 
 const KIND_LABEL: Record<string, string> = {
@@ -25,6 +25,10 @@ function Verdict({ s }: { s?: ScanSourceSummary }) {
   const threats = named.length ? named : s.threats;
   const soft = softThreatKind(s.threats);
   const pua = soft !== null;
+  // находки вперемешку: PUA и известные ложные срабатывания — жёлтым, остальное — красным
+  const isSoft = (t: string) => /^PUA:/i.test(t) || isLikelyFalsePositive(t);
+  const softList = threats.filter(isSoft);
+  const hardList = threats.filter((t) => !isSoft(t));
   return (
     <div className="space-y-1">
       {s.threat_users > 0 && (pua ? (
@@ -42,10 +46,19 @@ function Verdict({ s }: { s?: ScanSourceSummary }) {
           <AlertTriangle size={15} className="mt-0.5 shrink-0" />
           <span>
             Защитник нашёл угрозы у {s.threat_users} {s.threat_users === 1 ? 'игрока' : 'игроков'}
-            {threats.length > 0 && <>: <span className="text-white">{threats.join(', ')}</span></>}
+            {hardList.length > 0 && <>: <span className="text-white">{hardList.join(', ')}</span></>}
           </span>
         </p>
       ))}
+      {s.threat_users > 0 && !pua && softList.length > 0 && (
+        <p className="flex items-start gap-2 tl-term text-[14px] text-amber-300">
+          <AlertTriangle size={15} className="mt-0.5 shrink-0" />
+          <span>
+            Также нежелательные программы (не вирус, обычно упаковщик кряка):{' '}
+            <span className="text-white">{softList.join(', ')}</span>
+          </span>
+        </p>
+      )}
       {s.clean_users > 0 && (
         <p className="flex items-start gap-2 tl-term text-[14px] text-[var(--green2)]">
           <ShieldCheck size={15} className="mt-0.5 shrink-0" />

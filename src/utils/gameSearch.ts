@@ -5,15 +5,39 @@
 //   - слова запроса ищутся в любом порядке, каждое — по началу слова или внутри;
 //   - опечатки: 1 ошибка в словах от 4 букв, 2 — от 8 (Дамерау — Левенштейн);
 //   - «не та раскладка» (ыекфн → stray) и транслитерация (сталкер → stalker);
+//   - аббревиатуры: gta → Grand Theft Auto, rdr2 → Red Dead Redemption 2, mw2 → Modern Warfare 2,
+//     cs → Counter-Strike; цифра слитно с названием (witcher3 → witcher 3); игровой жаргон
+//     (ведьмак → witcher, колда → call of duty);
 //   - оценка релевантности: точное название > начало названия > слова названия >
-//     опечатки > разработчик, издатель и теги.
+//     аббревиатура > опечатки > разработчик, издатель, теги, языки, год > описание.
 
 export type SearchableGame = {
   title?: string;
   developer?: string;
   publisher?: string;
   tags?: { name?: string }[];
+  description?: string;
+  release_date?: string | null;
+  age_rating?: string;
+  languages?: { name?: string }[];
 };
+
+/** Как игроки называют игры — запрос заменяется на официальное название (ищем оба варианта) */
+const ALIASES: Record<string, string> = {
+  ведьмак: 'witcher', киберпанк: 'cyberpunk', майнкрафт: 'minecraft', майн: 'minecraft',
+  кс: 'counter strike', ксго: 'counter strike global offensive', контра: 'counter strike',
+  колда: 'call of duty', калда: 'call of duty', батла: 'battlefield', батлфилд: 'battlefield',
+  гта: 'grand theft auto', мв: 'mw', бо: 'bo', witcher: 'ведьмак', tes: 'elder scrolls', рдр: 'red dead redemption', тес: 'elder scrolls', фоллаут: 'fallout',
+  ассасин: 'assassins creed', ассасины: 'assassins creed', резидент: 'resident evil', обитель: 'resident evil',
+  дарк: 'dark', соулс: 'souls', дарксоулс: 'dark souls', элден: 'elden', ринг: 'ring',
+  халф: 'half', лайф: 'life', халфлайф: 'half life', хл: 'half life', нфс: 'need for speed',
+  мк: 'mortal kombat', террария: 'terraria', стардью: 'stardew', сабнавтика: 'subnautica',
+  csgo: 'counter strike global offensive', cod: 'call of duty', nfs: 'need for speed',
+  mk: 'mortal kombat', hl: 'half life', ac: 'assassins creed', re: 'resident evil',
+};
+
+/** Служебные слова, которые часто пропускают в аббревиатурах: Call of Duty → CoD и CD */
+const STOP = new Set(['the', 'of', 'a', 'an', 'and', 'in', 'on', 'to', 'for', 'и', 'в', 'на']);
 
 const ROMAN: Record<string, string> = { ii: '2', iii: '3', iv: '4', v: '5', vi: '6', vii: '7', viii: '8', ix: '9', x: '10', xi: '11', xii: '12' };
 
@@ -83,12 +107,15 @@ function distance(a: string, b: string, max: number): number {
 }
 
 const allowedTypos = (len: number) => (len >= 8 ? 2 : len >= 4 ? 1 : 0);
+const isNum = (w: string) => /^\d+$/.test(w);
 
 /**
  * Насколько слово запроса совпадает со словами поля: 3 — слово целиком, 2 — начало слова,
  * 1.5 — внутри слова (от 3 букв), 1 — с опечаткой; 0 — нет.
  */
 function matchWord(q: string, fieldWords: string[], fieldJoined: string): number {
+  // число — только целиком: «2023» не должно находить 2033, 2013 и все игры 2024 года
+  if (isNum(q)) return fieldWords.includes(q) ? 3 : 0;
   let best = 0;
   for (const w of fieldWords) {
     if (w === q) return 3;
@@ -107,17 +134,65 @@ function matchWord(q: string, fieldWords: string[], fieldJoined: string): number
   return 0;
 }
 
-type Prepared = { title: string[]; titleJoined: string; titleTr: string; other: string[]; otherJoined: string };
+type Prepared = {
+  title: string[]; titleJoined: string; titleTr: string; other: string[]; otherJoined: string;
+  /** аббревиатуры названия: целиком (gta5) и подряд идущих слов (mw2, rdr) */
+  acrFull: string[]; acrParts: Set<string>;
+  desc: string[];
+};
+
+/** Первые буквы слов; числа целиком: grand theft auto 5 → gta5 */
+const initials = (ws: string[]) => ws.map((w) => (/^\d+$/.test(w) ? w : w[0])).join('');
+
+function acronyms(title: string[]): { full: string[]; parts: Set<string> } {
+  const noStop = title.filter((w) => !STOP.has(w));
+  const full = [...new Set([initials(title), initials(noStop)])].filter((a) => a.length >= 2);
+  const parts = new Set<string>();
+  for (const ws of [title, noStop]) {
+    for (let i = 0; i < ws.length; i++) {
+      for (let j = i + 2; j <= Math.min(ws.length, i + 6); j++) parts.add(initials(ws.slice(i, j)));
+    }
+  }
+  return { full, parts };
+}
+
+const releaseYear = (d?: string | null) => (d && /^\d{4}/.test(d) ? d.slice(0, 4) : '');
 const cache = new WeakMap<object, Prepared>();
 
 function prepare(g: SearchableGame): Prepared {
   const hit = cache.get(g);
   if (hit) return hit;
   const title = words(g.title || '');
-  const other = words([g.developer, g.publisher, ...(g.tags || []).map((t) => t.name)].filter(Boolean).join(' '));
-  const p = { title, titleJoined: title.join(' '), titleTr: translit(g.title || ''), other, otherJoined: other.join(' ') };
+  const other = words([
+    g.developer, g.publisher, ...(g.tags || []).map((t) => t.name), ...(g.languages || []).map((l) => l.name),
+    releaseYear(g.release_date), g.age_rating,
+  ].filter(Boolean).join(' '));
+  const acr = acronyms(title);
+  const desc = [...new Set(words(g.description || ''))];
+  const p: Prepared = {
+    title, titleJoined: title.join(' '), titleTr: translit(g.title || ''), other, otherJoined: other.join(' '),
+    acrFull: acr.full, acrParts: acr.parts, desc,
+  };
   cache.set(g, p);
   return p;
+}
+
+/** Слово запроса — аббревиатура названия: 2.5 — всё название (gta, gta5), 2 — часть (mw2) */
+function matchAcronym(q: string, p: Prepared): number {
+  if (q.length < 2 || q.length > 8 || !/^[a-zа-я]/.test(q)) return 0;
+  if (p.acrFull.some((a) => a === q || (a.startsWith(q) && q.length >= 3))) return 2.5;
+  if (p.acrParts.has(q)) return 2;
+  return 0;
+}
+
+/** В описании — только слово целиком или его начало (от 4 букв), без опечаток: описание длинное */
+function matchDesc(q: string, desc: string[]): number {
+  if (q.length < 3) return 0;
+  for (const w of desc) {
+    if (w === q) return 1.5;
+    if (q.length >= 4 && w.startsWith(q)) return 1;
+  }
+  return 0;
 }
 
 /** Оценка одного варианта запроса; 0 — игра не подходит (каждое слово должно найтись) */
@@ -125,10 +200,11 @@ function scoreWords(qWords: string[], qJoined: string, p: Prepared): number {
   if (qWords.length === 0) return 0;
   let score = 0;
   for (const q of qWords) {
-    const t = matchWord(q, p.title, p.titleJoined);
+    const t = Math.max(matchWord(q, p.title, p.titleJoined), matchAcronym(q, p));
     const o = t ? 0 : matchWord(q, p.other, p.otherJoined);
-    if (!t && !o) return 0;
-    score += t ? t * 10 : o * 3;
+    const d = t || o ? 0 : matchDesc(q, p.desc);
+    if (!t && !o && !d) return 0;
+    score += t ? t * 10 : o ? o * 3 : d;
   }
   // бонусы за совпадение всего названия
   if (p.titleJoined === qJoined) score += 100;
@@ -147,9 +223,24 @@ export function compileQuery(raw: string): CompiledQuery {
     const joined = w.join(' ');
     if (joined && !variants.some((v) => v.joined === joined)) variants.push({ words: w, joined, penalty });
   }
+  // цифра слитно с буквами: witcher3 → witcher 3, 2033metro → 2033 metro
+  const splitDigits = (s: string) => s.replace(/(\p{L})(\d)/gu, '$1 $2').replace(/(\d)(\p{L})/gu, '$1 $2');
+  // жаргон и сокращения → официальное название: «колда мв2» → «call of duty мв2»
+  const expand = (s: string) => words(s).map((w) => ALIASES[w] ?? w).join(' ');
+  const base = [raw, swapLayout(raw)];
   add(raw, 1);
   add(swapLayout(raw), 0.8);
   if (/[а-яё]/i.test(raw)) add(translit(raw), 0.9);
+  for (const b of base) {
+    add(splitDigits(b), 0.95);
+    add(expand(b), 0.95);
+    add(expand(splitDigits(b)), 0.9);
+  }
+  // транслит — только от того, что набрано: от «не той раскладки» он даёт мусор (cs → сы → sy)
+  if (/[а-яё]/i.test(raw)) {
+    add(translit(expand(raw)), 0.85);
+    add(translit(expand(splitDigits(raw))), 0.85);
+  }
   return { raw, variants };
 }
 
