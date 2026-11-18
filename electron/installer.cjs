@@ -777,15 +777,38 @@ function launchProcess(bin, args, opts) {
   })
 }
 
+// Понятная причина, почему Windows не запустила файл (коды ошибок Win32)
+function explainLaunchError(code, message) {
+  switch (code) {
+    case 1223: return 'запуск отменён в окне «Разрешить этому приложению вносить изменения?». Запустите установку ещё раз и нажмите «Да»'
+    case 225: return 'Защитник Windows заблокировал файл как опасный. Посмотрите «Безопасность Windows → Журнал защиты» и проверку на вирусы в карточке игры'
+    case 1260: case 4551: case 4556:
+      return 'файл заблокирован политикой Windows (Интеллектуальное управление приложениями или ограничения администратора)'
+    case 2: case 3: return 'файл установщика не найден — возможно, его удалил антивирус. Проверьте файлы раздачи и скачайте заново'
+    case 5: return 'нет доступа к файлу установщика. Возможно, его держит антивирус — подождите минуту и попробуйте снова'
+    case 32: return 'файл установщика занят другой программой (антивирус ещё проверяет его). Подождите минуту и попробуйте снова'
+    case 193: case 216: return 'файл повреждён или не является программой Windows. Проверьте файлы раздачи и скачайте заново'
+    default: return message ? `${message}${code ? ` (код ${code})` : ''}` : 'Windows не смогла запустить файл'
+  }
+}
+
 // ShellExecute с аргументами (обходит блокировку свежих exe в CreateProcess)
 function launchViaShell(exePath, args, cwd) {
   return new Promise((resolve) => {
     const fp = String(exePath).replace(/'/g, "''")
     const wd = String(cwd || path.dirname(exePath)).replace(/'/g, "''")
-    const argList = args && args.length
-      ? ` -ArgumentList @(${args.map(a => `'${String(a).replace(/'/g, "''")}'`).join(',')})`
-      : ''
-    const ps = `try { $p = Start-Process -FilePath '${fp}'${argList} -WorkingDirectory '${wd}' -ErrorAction Stop -PassThru; Write-Output $p.Id } catch { exit 1 }`
+    const argLine = (args || []).map(String).join(' ').replace(/'/g, "''")
+    // Process.Start с ShellExecute (как двойной клик) вместо Start-Process: тот прячет код ошибки
+    // Windows в тексте и дописывает пробел в конец командной строки (у NSIS путь — последним).
+    // При сбое отдаём код и текст — по ним объясняем причину игроку.
+    const ps = [
+      '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
+      'try {',
+      '$i = New-Object System.Diagnostics.ProcessStartInfo',
+      `$i.FileName = '${fp}'; $i.Arguments = '${argLine}'; $i.WorkingDirectory = '${wd}'; $i.UseShellExecute = $true`,
+      '$p = [System.Diagnostics.Process]::Start($i); if ($p) { Write-Output $p.Id } else { Write-Output 0 } }',
+      "catch { $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }; Write-Output ('FAIL:' + $e.NativeErrorCode + ':' + $e.Message); exit 1 }",
+    ].join('\n')
     const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', ps], {
       windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'],
     })
@@ -797,7 +820,9 @@ function launchViaShell(exePath, args, cwd) {
         const pid = parseInt(out.trim().split(/\r?\n/).pop(), 10)
         resolve({ ok: true, pid: Number.isFinite(pid) && pid > 0 ? pid : null })
       } else {
-        resolve({ error: 'Start-Process завершился с кодом ' + code })
+        const fail = /FAIL:(\d*):(.*)/.exec(out)
+        const winCode = fail?.[1] ? Number(fail[1]) : null
+        resolve({ error: explainLaunchError(winCode, (fail?.[2] || '').trim()), winCode, cancelled: winCode === 1223 })
       }
     })
   })
@@ -909,12 +934,14 @@ async function launchInstalledGame(entry, launchOptions) {
 async function launchInstaller(installerPath, args = []) {
   if (!installerPath || !fs.existsSync(installerPath)) return { error: 'Файл не найден: ' + installerPath }
   const cwd = path.dirname(installerPath)
-  let res = await launchViaShell(installerPath, args, cwd)
-  if (res.ok) return res
-  res = await launchProcess(installerPath, args, { cwd, detached: true, stdio: 'ignore', windowsVerbatimArguments: true })
+  const first = await launchViaShell(installerPath, args, cwd)
+  // отказ в окне UAC или блокировка Защитником/политикой — повтор ничего не даст
+  if (first.ok || first.cancelled || [225, 1260, 4551, 4556].includes(first.winCode)) return first
+  const res = await launchProcess(installerPath, args, { cwd, detached: true, stdio: 'ignore', windowsVerbatimArguments: true })
   if (res.ok) return res
   await new Promise(r => setTimeout(r, 1500))
-  return await launchViaShell(installerPath, args, cwd)
+  const last = await launchViaShell(installerPath, args, cwd)
+  return last.ok ? last : (last.winCode ? last : first)
 }
 
 // Ждёт завершения процесса по PID; EPERM = процесс жив (запущен с повышением)
