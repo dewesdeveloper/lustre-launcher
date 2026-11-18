@@ -425,48 +425,147 @@ const silentInstallSucceeded = (type, code) => code === 0 || (type === 'msi' && 
 // Потоки распаковки 7-Zip: половина ядер, но не больше 4 — расход памяти растёт с каждым потоком
 const EXTRACT_THREADS = Math.max(1, Math.min(4, Math.floor((os.cpus()?.length || 2) / 2)))
 
+/**
+ * Запросит ли установщик права администратора. Почти все репаки — да (requireAdministrator в
+ * манифесте, а Inno Setup ещё и сам перезапускает Setup.tmp с правами). Без манифеста Windows
+ * повышает права exe с «setup/install» в имени (эвристика обнаружения установщиков).
+ */
+function installerNeedsAdmin(file, type) {
+  if (type === 'msi') return false // msiexec сам поднимает права службы установки
+  if (type === 'inno') return true
+  let text = ''
+  try {
+    const fd = fs.openSync(file, 'r')
+    try {
+      const size = Math.min(fs.fstatSync(fd).size, MARKER_SCAN_BYTES)
+      const buf = Buffer.alloc(size)
+      fs.readSync(fd, buf, 0, size, 0)
+      text = buf.toString('latin1')
+    } finally { fs.closeSync(fd) }
+  } catch { return true }
+  const level = /requestedExecutionLevel\s+level=["'](\w+)/i.exec(text)?.[1]
+  if (level) return !/^asInvoker$/i.test(level)
+  return /setup|install|update|patch/i.test(path.basename(file))
+}
+
+/** Ядра для распаковщиков репака: остальные остаются системе и игроку */
+function installerAffinityMask() {
+  const n = Math.min(os.cpus()?.length || 2, 63)
+  const use = n <= 2 ? n : Math.max(2, n - Math.max(2, Math.floor(n / 3)))
+  return (2 ** use) - 1
+}
+
+/**
+ * Скрипт, который запускает установщик и следит за всем деревом его процессов:
+ * - приоритет процессора «низкий» (Idle): распаковка идёт, когда процессор свободен, и не отнимает
+ *   его у игр, браузера и самого лаунчера;
+ * - часть ядер свободна (маска сродства): xtool и 7-Zip занимали все 12 потоков;
+ * - низкий приоритет диска и памяти: система и окна не ждут, пока распаковщик пишет сотни МБ/с.
+ * Итог (код выхода или ошибка) пишется в файл — при запуске с правами администратора
+ * вывод процесса недоступен.
+ */
+function installerWatchScript(cmd, cwd, resultFile) {
+  const q = (s) => `'${String(s).replace(/'/g, "''")}'`
+  return [
+    '$ErrorActionPreference = "Continue"',
+    `$result = ${q(resultFile)}`,
+    'function Put($s) { [System.IO.File]::WriteAllText($result, $s, [System.Text.Encoding]::UTF8) }',
+    'try {',
+    '  Add-Type -ErrorAction Stop -TypeDefinition @"',
+    'using System; using System.Runtime.InteropServices;',
+    'public static class LustreTune {',
+    '  [DllImport("ntdll.dll")] static extern int NtSetInformationProcess(IntPtr h, int cls, ref int v, int len);',
+    '  public static void Background(IntPtr h) {',
+    '    int io = 1; NtSetInformationProcess(h, 33, ref io, 4);   // ProcessIoPriority: Low',
+    '    int page = 2; NtSetInformationProcess(h, 39, ref page, 4); // ProcessPagePriority: Low',
+    '  }',
+    '}',
+    '"@',
+    '} catch {}',
+    'try {',
+    '  $i = New-Object System.Diagnostics.ProcessStartInfo',
+    // Не Start-Process: он дописывает пробел в конец командной строки, а у NSIS путь стоит последним
+    // и без кавычек — пробел попал бы в имя папки
+    `  $i.FileName = ${q(cmd.exe)}; $i.Arguments = ${q(cmd.args.join(' '))}; $i.WorkingDirectory = ${q(cwd)}`,
+    '  $i.UseShellExecute = $true',
+    '  $p = [System.Diagnostics.Process]::Start($i)',
+    '} catch {',
+    '  $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }',
+    "  Put ('FAIL:' + $e.NativeErrorCode + ':' + $e.Message); exit 1",
+    '}',
+    `$mask = [IntPtr]${installerAffinityMask()}`,
+    '$tree = @{}; $tree[$p.Id] = $true; $tuned = @{}',
+    'function Tune($proc) {',
+    '  try {',
+    '    if ($proc.PriorityClass -ne "Idle") { $proc.PriorityClass = "Idle" }',
+    '    if (-not $tuned.ContainsKey($proc.Id)) {',
+    '      $proc.ProcessorAffinity = $mask',
+    '      try { [LustreTune]::Background($proc.Handle) } catch {}',
+    '      $tuned[$proc.Id] = $true',
+    '    }',
+    '  } catch {}',
+    '}',
+    'Tune $p',
+    'while (-not $p.WaitForExit(2000)) {',
+    '  Tune $p',
+    '  $all = Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId -ErrorAction SilentlyContinue',
+    '  do { $added = $false; foreach ($c in $all) { if ($tree.ContainsKey([int]$c.ParentProcessId) -and -not $tree.ContainsKey([int]$c.ProcessId)) { $tree[[int]$c.ProcessId] = $true; $added = $true } } } while ($added)',
+    '  foreach ($id in @($tree.Keys)) { if ($id -ne $p.Id) { try { Tune ([System.Diagnostics.Process]::GetProcessById($id)) } catch { $tree.Remove($id) } } }',
+    '}',
+    "Put ('EXIT:' + $p.ExitCode)",
+  ].join('\r\n')
+}
+
 function runInstallerSilently(file, type, dir) {
   const cmd = silentInstallCommand(file, type, dir)
   if (!cmd) return Promise.resolve({ error: 'неизвестный тип установщика' })
+  const stamp = `${process.pid}-${Date.now()}`
+  const scriptFile = path.join(os.tmpdir(), `lustre-install-${stamp}.ps1`)
+  const resultFile = path.join(os.tmpdir(), `lustre-install-${stamp}.txt`)
+  try {
+    // BOM: Windows PowerShell 5.1 без него читает кириллицу в путях как ANSI
+    fs.writeFileSync(scriptFile, '﻿' + installerWatchScript(cmd, path.dirname(file), resultFile), 'utf8')
+  } catch (e) {
+    return Promise.resolve({ error: e.message })
+  }
   const q = (s) => `'${String(s).replace(/'/g, "''")}'`
-  const ps = [
-    '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
-    // Не Start-Process: он дописывает пробел в конец командной строки, а у NSIS путь стоит последним
-    // и без кавычек — пробел попал бы в имя папки
-    'try {',
-    '$i = New-Object System.Diagnostics.ProcessStartInfo',
-    `$i.FileName = ${q(cmd.exe)}; $i.Arguments = ${q(cmd.args.join(' '))}; $i.WorkingDirectory = ${q(path.dirname(file))}`,
-    '$i.UseShellExecute = $true',
-    '$p = [System.Diagnostics.Process]::Start($i)',
-    // Распаковщики репаков (CLS-srep, 7-Zip, unarc) тянут гигабайты памяти и все ядра: ставим
-    // установщику и всему, что он запустил, пониженный приоритет — система остаётся отзывчивой.
-    // Повышенные (с правами администратора) процессы могут не поддаться — тогда просто пропускаем.
-    "$tree = @{}; $tree[$p.Id] = $true",
-    'while (-not $p.WaitForExit(3000)) {',
-    '  try { if ($p.PriorityClass -ne "BelowNormal") { $p.PriorityClass = "BelowNormal" } } catch {}',
-    '  $all = Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId -ErrorAction SilentlyContinue',
-    '  do { $added = $false; foreach ($c in $all) { if ($tree.ContainsKey([int]$c.ParentProcessId) -and -not $tree.ContainsKey([int]$c.ProcessId)) { $tree[[int]$c.ProcessId] = $true; $added = $true } } } while ($added)',
-    '  foreach ($id in @($tree.Keys)) { if ($id -ne $p.Id) { try { $q = [System.Diagnostics.Process]::GetProcessById($id); if ($q.PriorityClass -ne "BelowNormal") { $q.PriorityClass = "BelowNormal" } } catch {} } }',
-    '}',
-    "Write-Output ('EXIT:' + $p.ExitCode) }",
-    // код ошибки Windows: 1223 — пользователь отказал в окне запроса прав
-    "catch { $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }; Write-Output ('FAIL:' + $e.NativeErrorCode + ':' + $e.Message); exit 1 }",
-  ].join('\n')
+  const scriptArgs = `-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "${scriptFile}"`
+  // Установщику нужны права администратора — запускаем с ними сам наблюдающий скрипт (одно окно
+  // UAC, как и раньше): из обычного процесса лаунчер не может изменить приоритет повышенных
+  // процессов, и распаковщики репаков занимали весь процессор и диск.
+  const ps = installerNeedsAdmin(file, type)
+    ? [
+        'try {',
+        '$i = New-Object System.Diagnostics.ProcessStartInfo',
+        `$i.FileName = 'powershell.exe'; $i.Arguments = ${q(scriptArgs)}; $i.Verb = 'runas'; $i.UseShellExecute = $true`,
+        '$i.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden',
+        '$p = [System.Diagnostics.Process]::Start($i); $p.WaitForExit(); Write-Output "DONE" }',
+        // код ошибки Windows: 1223 — пользователь отказал в окне запроса прав
+        "catch { $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }; Write-Output ('FAIL:' + $e.NativeErrorCode + ':' + $e.Message); exit 1 }",
+      ].join('\n')
+    : `& powershell.exe ${scriptArgs}; Write-Output "DONE"`
   return new Promise((resolve) => {
-    const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', ps], {
+    const child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-Command', '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n' + ps], {
       windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'],
     })
     let out = ''
     child.stdout.on('data', (d) => { out += d.toString() })
-    child.on('error', (e) => resolve({ error: e.message }))
+    const cleanup = () => {
+      fs.promises.rm(scriptFile, { force: true }).catch(() => {})
+      fs.promises.rm(resultFile, { force: true }).catch(() => {})
+    }
+    child.on('error', (e) => { cleanup(); resolve({ error: e.message }) })
     child.on('exit', () => {
-      const exit = /EXIT:(-?\d*)/.exec(out)
+      let res = out
+      try { res = fs.readFileSync(resultFile, 'utf8').replace(/^﻿/, '') + '\n' + out } catch { /* скрипт не запустился */ }
+      cleanup()
+      const exit = /EXIT:(-?\d*)/.exec(res)
       if (exit) {
         const code = exit[1] === '' ? null : Number(exit[1])
         resolve({ code, ok: code !== null && silentInstallSucceeded(type, code) })
         return
       }
-      const fail = /FAIL:(\d*):(.*)/.exec(out)
+      const fail = /FAIL:(\d*):(.*)/.exec(res)
       const message = (fail?.[2] || '').trim()
       // Отказ в окне «Разрешить этому приложению вносить изменения?» (ERROR_CANCELLED)
       const cancelled = fail?.[1] === '1223'

@@ -1,6 +1,7 @@
 import { Loader2, Pause, Play, Trash2, PackageOpen, CheckCircle2, AlertTriangle, Users } from 'lucide-react';
 import type { Download } from '../../types';
 import { formatBytes, formatSpeed, formatETA } from '../../constants';
+import { formatEtaApprox, useInstallEta } from '../../../../utils/installEstimate';
 
 interface DownloadCardProps {
   dl: Download;
@@ -28,6 +29,9 @@ const DownloadCard = ({ dl, onPause, onResume, onRemove, onOpenGame, onInstall, 
   const installing = !!installState && installState.phase !== 'done';
   const installDone = installState?.phase === 'done';
   const active = dl.status === 'downloading';
+  // примерный процент и оставшееся время установки (у тихого установщика — по размеру игры из каталога)
+  const eta = useInstallEta(installing ? installState : undefined, dl.gameId, dl.totalSize);
+  const showBar = installState?.phase === 'install' && eta.percent !== null;
 
   return (
     <div className="tl-panel p-4">
@@ -139,21 +143,30 @@ const DownloadCard = ({ dl, onPause, onResume, onRemove, onOpenGame, onInstall, 
               : installState!.phase === 'installer'
               ? 'Установщик запущен — завершите установку и укажите exe на странице игры'
               : installState!.silent
-                ? `Установка без мастера…${installState!.bytes ? ` ${formatBytes(installState!.bytes)}` : ''}`
+                ? `Установка без мастера…${installState!.bytes ? ` ${formatBytes(installState!.bytes)}${eta.expectedBytes ? ` из ~${formatBytes(eta.expectedBytes)}` : ''}` : ''}`
                 : 'Установка…'}
-            {installState!.phase === 'install' && installState!.percent >= 0 && (
-              <span className="ml-auto tl-head text-[10px] text-white">{installState!.percent}%</span>
+            {showBar && (
+              <span className="ml-auto tl-head text-[10px] text-white">{installState!.silent ? '~' : ''}{eta.percent}%</span>
             )}
           </div>
+          {installState!.phase === 'install' && !installState!.queued && (
+            <p className="mt-1 tl-term text-[14px] text-white/80">
+              {eta.seconds !== null
+                ? <>Осталось {formatEtaApprox(eta.seconds)}{installState!.silent ? ' (примерно: установщик не сообщает точный прогресс)' : ''}</>
+                : eta.percent !== null && eta.percent >= 99
+                  ? 'Почти готово — установщик завершает работу'
+                  : 'Оцениваем время установки…'}
+            </p>
+          )}
           {installState!.silent && (
             <p className="mt-1.5 tl-term text-[14px] text-[var(--muted)]">
               Установщик может открыть свои окна: проверку файлов, DirectX, Visual C++. Завершите их — после этого появится кнопка «Играть».
               Распаковка репака может занимать несколько гигабайт памяти — на это время лучше закрыть браузер и игры.
             </p>
           )}
-          {installState!.phase === 'install' && installState!.percent >= 0 && (
+          {showBar && (
             <div className="mt-2 h-1.5 bg-white/5 border border-[var(--line)] overflow-hidden">
-              <div className="h-full bg-[var(--cyan,#22d3ee)] transition-all duration-300" style={{ width: `${installState!.percent}%` }} />
+              <div className={`h-full transition-all duration-300 ${installState!.silent ? 'bg-[var(--cyan,#22d3ee)]/70' : 'bg-[var(--cyan,#22d3ee)]'}`} style={{ width: `${eta.percent}%` }} />
             </div>
           )}
         </div>
