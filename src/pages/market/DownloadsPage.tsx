@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Download as DownloadIcon } from 'lucide-react';
 import { useDialog } from '../../components/Dialogs';
+import { launchGameWithChecks } from '../../utils/launchResult';
 import { applyChosenCrack, askCrackMissing } from '../../utils/crackMissing';
 import CrackChoiceDialog, { type CrackOption } from '../../components/CrackChoiceDialog';
 import { nativeNotify } from '../../utils/nativeNotify';
@@ -133,7 +134,7 @@ export default function DownloadsPage() {
     refreshInstalled();
   };
 
-  const play = (id: string) => electron?.launchGame?.(id);
+  const play = (id: string) => launchGameWithChecks(id, dlg);
   const reveal = (id: string) => electron?.revealGame?.(id);
   const uninstall = async (g: InstalledGame) => {
     const ok = await dlg.confirm({

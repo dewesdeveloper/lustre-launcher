@@ -479,7 +479,8 @@ function installerAffinityMask() {
  * - приоритет процессора «низкий» (Idle): распаковка идёт, когда процессор свободен, и не отнимает
  *   его у игр, браузера и самого лаунчера;
  * - часть ядер свободна (маска сродства): xtool и 7-Zip занимали все 12 потоков;
- * - низкий приоритет диска и памяти: система и окна не ждут, пока распаковщик пишет сотни МБ/с.
+ * Приоритет диска не понижаем: на медленных SSD с ним установка Rust вставала на часы — Windows
+ * пропускала вперёд любую другую запись и чтение (раздачи торрента), а распаковщик ждал диск.
  * Итог (код выхода или ошибка) пишется в файл — при запуске с правами администратора
  * вывод процесса недоступен.
  */
@@ -489,18 +490,6 @@ function installerWatchScript(cmd, cwd, resultFile) {
     '$ErrorActionPreference = "Continue"',
     `$result = ${q(resultFile)}`,
     'function Put($s) { [System.IO.File]::WriteAllText($result, $s, [System.Text.Encoding]::UTF8) }',
-    'try {',
-    '  Add-Type -ErrorAction Stop -TypeDefinition @"',
-    'using System; using System.Runtime.InteropServices;',
-    'public static class LustreTune {',
-    '  [DllImport("ntdll.dll")] static extern int NtSetInformationProcess(IntPtr h, int cls, ref int v, int len);',
-    '  public static void Background(IntPtr h) {',
-    '    int io = 1; NtSetInformationProcess(h, 33, ref io, 4);   // ProcessIoPriority: Low',
-    '    int page = 2; NtSetInformationProcess(h, 39, ref page, 4); // ProcessPagePriority: Low',
-    '  }',
-    '}',
-    '"@',
-    '} catch {}',
     'try {',
     '  $i = New-Object System.Diagnostics.ProcessStartInfo',
     // Не Start-Process: он дописывает пробел в конец командной строки, а у NSIS путь стоит последним
@@ -519,7 +508,6 @@ function installerWatchScript(cmd, cwd, resultFile) {
     '    if ($proc.PriorityClass -ne "Idle") { $proc.PriorityClass = "Idle" }',
     '    if (-not $tuned.ContainsKey($proc.Id)) {',
     '      $proc.ProcessorAffinity = $mask',
-    '      try { [LustreTune]::Background($proc.Handle) } catch {}',
     '      $tuned[$proc.Id] = $true',
     '    }',
     '  } catch {}',

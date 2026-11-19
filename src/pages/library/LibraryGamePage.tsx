@@ -5,6 +5,7 @@ import {
   ShieldCheck, ShieldAlert } from 'lucide-react';
 import api from '../../api';
 import { useDialog } from '../../components/Dialogs';
+import { launchGameWithChecks } from '../../utils/launchResult';
 import { CRACK_MISSING_TEXT, applyChosenCrack, keepWithoutCrack, reinstallWithWizard } from '../../utils/crackMissing';
 import CrackChoiceDialog from '../../components/CrackChoiceDialog';
 import { notifyLibraryChanged } from '../../utils/libraryEvents';
@@ -173,9 +174,7 @@ export default function LibraryGamePage() {
       setLaunching(true);
       // облачные сохранения: в облаке новее (играли на другом ПК) — предложить скачать
       await beforeLaunch(Number(id), installed.installPath, dlg.confirm);
-      const res = await electron?.launchGame?.(installed.id);
-      if (res?.error) console.error(res.error);
-      else refreshInstalled();
+      if (await launchGameWithChecks(installed.id, dlg)) refreshInstalled();
     } finally {
       setTimeout(() => setLaunching(false), 800);
     }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Loader2, Play, FolderOpen, Trash2, WifiOff } from 'lucide-react';
 import type { InstalledGame } from '../../market/types';
 import { useDialog } from '../../../components/Dialogs';
+import { launchGameWithChecks } from '../../../utils/launchResult';
 import { Loading } from '../../../components/Loading';
 import OfflineArcade from '../../../components/arcade/OfflineArcade';
 
@@ -38,8 +39,7 @@ export default function LibraryOffline() {
   const play = async (g: InstalledGame) => {
     setLaunching(g.id);
     try {
-      const res = await electron?.launchGame?.(g.id);
-      if (res?.error) console.error('Launch failed:', res.error);
+      await launchGameWithChecks(g.id, dlg);
     } finally {
       setLaunching('');
     }

@@ -26,6 +26,7 @@ import { applySeo, plainDescription } from '../../seo/seo';
 import { findInstalled } from '../../utils/installedMatch';
 import AchievementsSection from '../../components/achievements/AchievementsSection';
 import { hasAdmin } from '../../admin';
+import { launchGameWithChecks } from '../../utils/launchResult';
 
 const GameDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -107,8 +108,7 @@ const GameDetailsPage: React.FC = () => {
     try {
       // облачные сохранения: в облаке новее — предложить скачать перед игрой
       await beforeLaunch(Number(id), installed.installPath, dialog.confirm);
-      const res = await electron.launchGame(installed.id);
-      if (res?.error) console.error('Launch failed:', res.error);
+      await launchGameWithChecks(installed.id, dialog);
     } finally {
       setLaunching(false);
     }

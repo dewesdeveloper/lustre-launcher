@@ -566,6 +566,34 @@ async function qbGetTorrents() {
 
 async function qbPauseTorrent(hash) { await qbPostAny(['/api/v2/torrents/stop', '/api/v2/torrents/pause'], { hashes: hash }) }
 async function qbResumeTorrent(hash) { await qbPostAny(['/api/v2/torrents/start', '/api/v2/torrents/resume'], { hashes: hash }) }
+// На время установки раздачи ставятся на паузу: торрент читал с того же диска 6–9 МБ/с, и на
+// дешёвых SSD (после заполнения кэша запись падает до десятков МБ/с) установщик почти вставал.
+// Учитываются вложенные установки; после последней возобновляем только то, что ставили на паузу мы.
+const SEEDING_STATES = new Set(['uploading', 'stalledUP', 'forcedUP', 'queuedUP'])
+let seedingPauseDepth = 0
+let seedingPausedByInstall = []
+async function pauseSeedingForInstall() {
+  seedingPauseDepth++
+  if (seedingPauseDepth > 1) return
+  try {
+    const list = await qbRequest('/api/v2/torrents/info')
+    const hashes = (Array.isArray(list) ? list : []).filter((t) => SEEDING_STATES.has(t.state)).map((t) => t.hash)
+    if (hashes.length) {
+      await qbPauseTorrent(hashes.join('|'))
+      seedingPausedByInstall = hashes
+      console.log('[Install] раздачи на паузе на время установки:', hashes.length)
+    }
+  } catch { /* торрент-клиент не запущен — раздавать нечего */ }
+}
+async function resumeSeedingAfterInstall() {
+  seedingPauseDepth = Math.max(0, seedingPauseDepth - 1)
+  if (seedingPauseDepth > 0 || !seedingPausedByInstall.length) return
+  const hashes = seedingPausedByInstall
+  seedingPausedByInstall = []
+  // удалённые за время установки (её же загрузка) торрент-клиент просто пропустит
+  await qbResumeTorrent(hashes.join('|')).catch(() => {})
+}
+
 // Окно «Удалить загрузку» обещает стереть файлы: раньше они всегда оставались на диске
 async function qbDeleteTorrent(hash, deleteFiles = false) { await qbRequest('/api/v2/torrents/delete', 'POST', { hashes: hash, deleteFiles: deleteFiles ? 'true' : 'false' }) }
 
@@ -1982,7 +2010,13 @@ ipcMain.handle('install-game', async (e, gameId, opts) => {
   try {
     if (activeInstalls > 1) sendInstallProgress({ gameId, phase: 'install', percent: -1, queued: true })
     await waitFor
-    const res = await installGameImpl(gameId, { skipScan: opts?.skipScan === true })
+    await pauseSeedingForInstall()
+    let res
+    try {
+      res = await installGameImpl(gameId, { skipScan: opts?.skipScan === true })
+    } finally {
+      await resumeSeedingAfterInstall()
+    }
     if (catalogTitle) {
       const entry = loadRegistry().find((g) => g.id === gameId)
       if (entry && entry.title !== catalogTitle) registerGame({ ...entry, title: catalogTitle })
@@ -2129,10 +2163,47 @@ ipcMain.handle('launch-game', async (e, id) => {
       return { error: 'Игра установлена не до конца: в её папке нет файла игры, только установочные файлы. Удалите игру и установите заново.' }
     }
   }
+  // Защитник Windows убрал в карантин файлы из папки игры (чаще всего кряк steam_api.dll):
+  // игра упадёт с системной ошибкой «не обнаружила steam_api.dll» — объясняем заранее
+  if (entry?.installPath) {
+    const removed = await defenderRemovals(entry.installPath)
+    if (removed.length) return { defenderRemoved: removed, gameName: installerModule.gameDisplayName(entry) }
+  }
   const res = await launchInstalledGame(entry)
   if (res?.ok && entry) startGameSession(entry)
   return res
 })
+
+ipcMain.handle('open-defender-history', async () => {
+  try { await shell.openExternal('windowsdefender://threathistory/'); return true } catch {}
+  try { await shell.openExternal('windowsdefender://threat/'); return true } catch { return false }
+})
+
+/**
+ * Файлы из папки игры, которые Защитник Windows обнаружил и которых на месте больше нет
+ * (карантин или удаление). Журнал читается без прав администратора; ответ — за 1–2 секунды.
+ */
+async function defenderRemovals(dir) {
+  const root = path.resolve(dir).toLowerCase()
+  const q = (s) => `'${String(s).replace(/'/g, "''")}'`
+  const out = await runPs([
+    '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
+    '$names = @{}; Get-MpThreat -ErrorAction SilentlyContinue | ForEach-Object { $names[[string]$_.ThreatID] = $_.ThreatName }',
+    `$root = ${q(root)}`,
+    '$res = @(); Get-MpThreatDetection -ErrorAction SilentlyContinue | ForEach-Object { $d = $_; foreach ($r in $d.Resources) {',
+    '  $f = $r -replace "^[a-z]+:_", ""',
+    '  if ($f.ToLower().StartsWith($root + "\\") -and -not (Test-Path -LiteralPath $f)) {',
+    '    $res += [pscustomobject]@{ file = $f; threat = $names[[string]$d.ThreatID]; at = $d.InitialDetectionTime.ToString("o") } } } }',
+    '$res | Sort-Object file -Unique | ConvertTo-Json -Compress',
+  ].join('\n'), 8000)
+  if (!out) return []
+  try {
+    const list = JSON.parse(out)
+    return (Array.isArray(list) ? list : [list])
+      .filter((x) => x?.file)
+      .map((x) => ({ file: path.relative(dir, x.file) || x.file, threat: x.threat || '', at: x.at || '' }))
+  } catch { return [] }
+}
 
 // Игра запущена (кнопкой «Играть» или в обход лаунчера): учёт времени, статус «Играет в …», события
 function startGameSession(entry) {
@@ -2393,7 +2464,11 @@ ipcMain.handle('install-from-setup', async (e, id) => {
         sendInstallProgress({ gameId: id, catalogId, phase: 'install', percent: -1, silent: true, bytes: await pathSize(target) })
       }, 3000)
       let res
-      try { res = await runInstallerSilently(entry.setupPath, type, target) } finally { clearInterval(sizeTimer) }
+      await pauseSeedingForInstall()
+      try { res = await runInstallerSilently(entry.setupPath, type, target) } finally {
+        clearInterval(sizeTimer)
+        await resumeSeedingAfterInstall()
+      }
       if (res.cancelled) {
         sendInstallProgress({ gameId: id, catalogId, phase: 'idle', percent: -1 })
         return { error: 'Установка отменена: установщику нужны права администратора' }

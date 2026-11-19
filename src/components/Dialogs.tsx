@@ -93,7 +93,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
                   {dialog.title && (
                     <h3 className="text-[11px] font-black uppercase tracking-[0.15em] text-pearl mb-1.5">{dialog.title}</h3>
                   )}
-                  <p className="text-sm text-pearl/60 leading-relaxed break-words">{dialog.message}</p>
+                  <p className="text-sm text-pearl/60 leading-relaxed break-words whitespace-pre-line">{dialog.message}</p>
                 </div>
               </div>
 
