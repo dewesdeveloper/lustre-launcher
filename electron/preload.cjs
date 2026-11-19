@@ -177,6 +177,7 @@ contextBridge.exposeInMainWorld('electron', {
   launchGame: (id) => ipcRenderer.invoke('launch-game', id),
   openDefenderHistory: () => ipcRenderer.invoke('open-defender-history'),
   pickGameExe: () => ipcRenderer.invoke('pick-exe'),
+  addLocalGame: (opts) => ipcRenderer.invoke('add-local-game', opts),
   setGameExe: (id, exePath) => ipcRenderer.invoke('set-game-exe', id, exePath),
   // Пути скачивания/установки (машинные настройки, Настройки → Хранилище)
   appPathsGet: () => ipcRenderer.invoke('paths:get'),

@@ -14,6 +14,8 @@ import { notifyLibraryChanged } from '../../utils/libraryEvents';
 import { formatPlaytime } from '../../utils/playtime';
 import { Loading } from '../../components/Loading';
 import { findInstalled } from '../../utils/installedMatch';
+import AddLocalGameModal from './components/AddLocalGameModal';
+import { canAddLocalGames } from '../../utils/localGame';
 
 const GRID_BY_SIZE: Record<string, string> = {
   auto: 'grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4',
@@ -30,6 +32,7 @@ export default function LibraryPage() {
   const { offline, reconnectKey } = useConnectivity();
   const [entries, setEntries] = useState<LibraryEntry[]>([]);
   const [installed, setInstalled] = useState<InstalledGame[]>([]);
+  const [addLocalOpen, setAddLocalOpen] = useState(false);
   // Реальные данные диска (statfs из main-процесса), где лежат игры
   const [disk, setDisk] = useState<{ root: string; total: number; free: number } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -187,7 +190,9 @@ export default function LibraryPage() {
           pageSize={pageSize}
           onChangePageSize={setPageSize}
           onOpenDownloads={() => navigate('/downloads')}
+          onAddLocal={canAddLocalGames() ? () => setAddLocalOpen(true) : undefined}
         />
+        <AddLocalGameModal open={addLocalOpen} onClose={() => setAddLocalOpen(false)} onAdded={() => { void fetchLibrary(); }} />
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-[22px] items-start">
           <div className="min-w-0">

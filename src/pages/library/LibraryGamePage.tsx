@@ -6,6 +6,7 @@ import {
 import api from '../../api';
 import { useDialog } from '../../components/Dialogs';
 import { launchGameWithChecks } from '../../utils/launchResult';
+import { canAddLocalGames, pickAndAddLocalGame } from '../../utils/localGame';
 import { CRACK_MISSING_TEXT, applyChosenCrack, keepWithoutCrack, reinstallWithWizard } from '../../utils/crackMissing';
 import CrackChoiceDialog from '../../components/CrackChoiceDialog';
 import { notifyLibraryChanged } from '../../utils/libraryEvents';
@@ -473,10 +474,23 @@ export default function LibraryGamePage() {
                 <Loader2 size={16} className="animate-spin" /> Идёт установка
               </button>
             ) : (
-              <button onClick={install} disabled={installing} className="tl-btn solid h-12 min-w-[180px] justify-center px-8 text-[13px]">
-                {installing ? <Loader2 size={16} className="animate-spin" /> : <MonitorSmartphone size={16} />}
-                {installing ? 'Добавление…' : 'Установить'}
-              </button>
+              <>
+                <button onClick={install} disabled={installing} className="tl-btn solid h-12 min-w-[180px] justify-center px-8 text-[13px]">
+                  {installing ? <Loader2 size={16} className="animate-spin" /> : <MonitorSmartphone size={16} />}
+                  {installing ? 'Добавление…' : 'Установить'}
+                </button>
+                {/* игра уже стоит на компьютере (без лаунчера) — привязать её exe, не переустанавливая */}
+                {canAddLocalGames() && game && (
+                  <button
+                    type="button"
+                    onClick={async () => { if (await pickAndAddLocalGame(Number(id), game.title, dlg)) refreshInstalled(); }}
+                    title="Игра уже установлена на компьютере без лаунчера — укажите её exe, переустанавливать не нужно"
+                    className="tl-btn ghost h-12 px-5 text-[12px]"
+                  >
+                    <FolderSearch size={15} /> Уже установлена? Указать файл
+                  </button>
+                )}
+              </>
             )
           )}
 

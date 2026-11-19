@@ -476,8 +476,9 @@ function installerAffinityMask() {
 
 /**
  * Скрипт, который запускает установщик и следит за всем деревом его процессов:
- * - приоритет процессора «низкий» (Idle): распаковка идёт, когда процессор свободен, и не отнимает
- *   его у игр, браузера и самого лаунчера;
+ * - приоритет процессора «ниже обычного»: игры, браузер и лаунчер получают процессор первыми. Самый низкий
+ *   (Idle) не годится — установщик получал 3% процессора (Защитник, браузер всегда чем-то заняты),
+ *   и Terraria на 780 МБ ставилась больше 10 минут;
  * - часть ядер свободна (маска сродства): xtool и 7-Zip занимали все 12 потоков;
  * Приоритет диска не понижаем: на медленных SSD с ним установка Rust вставала на часы — Windows
  * пропускала вперёд любую другую запись и чтение (раздачи торрента), а распаковщик ждал диск.
@@ -505,7 +506,7 @@ function installerWatchScript(cmd, cwd, resultFile) {
     '$tree = @{}; $tree[$p.Id] = $true; $tuned = @{}',
     'function Tune($proc) {',
     '  try {',
-    '    if ($proc.PriorityClass -ne "Idle") { $proc.PriorityClass = "Idle" }',
+    '    if ($proc.PriorityClass -ne "BelowNormal") { $proc.PriorityClass = "BelowNormal" }',
     '    if (-not $tuned.ContainsKey($proc.Id)) {',
     '      $proc.ProcessorAffinity = $mask',
     '      $tuned[$proc.Id] = $true',
@@ -513,7 +514,7 @@ function installerWatchScript(cmd, cwd, resultFile) {
     '  } catch {}',
     '}',
     'Tune $p',
-    'while (-not $p.WaitForExit(2000)) {',
+    'while (-not $p.WaitForExit(4000)) {',
     '  Tune $p',
     '  $all = Get-CimInstance Win32_Process -Property ProcessId,ParentProcessId -ErrorAction SilentlyContinue',
     '  do { $added = $false; foreach ($c in $all) { if ($tree.ContainsKey([int]$c.ParentProcessId) -and -not $tree.ContainsKey([int]$c.ProcessId)) { $tree[[int]$c.ProcessId] = $true; $added = $true } } } while ($added)',

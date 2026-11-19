@@ -2010,6 +2010,9 @@ ipcMain.handle('install-game', async (e, gameId, opts) => {
   try {
     if (activeInstalls > 1) sendInstallProgress({ gameId, phase: 'install', percent: -1, queued: true })
     await waitFor
+    // очередь дошла: снимаем пометку «в очереди» — иначе она оставалась в состоянии установки
+    // (sendInstallProgress сливает события) и карточка до конца писала «ждёт другую установку»
+    if (installStatus.get(gameId)?.queued) sendInstallProgress({ gameId, phase: 'install', percent: -1, queued: false })
     await pauseSeedingForInstall()
     let res
     try {
@@ -2314,7 +2317,8 @@ const CRACK_CHECK_VERSION = 2
 
 // Разовая проверка кряка у игр, установленных тихо раньше (до появления проверки после установки)
 async function checkInstalledCracks() {
-  for (const g of loadRegistry().filter((x) => x.exePath && x.installPath && x.crackChecked !== CRACK_CHECK_VERSION && !x.crackApplied)) {
+  // игры, добавленные игроком со своего диска (kind external), часто куплены — кряк у них не ищем
+  for (const g of loadRegistry().filter((x) => x.exePath && x.installPath && x.kind !== 'external' && x.crackChecked !== CRACK_CHECK_VERSION && !x.crackApplied)) {
     const res = await crackCheck.check(g.installPath).catch(() => ({ status: 'unknown' }))
     if (res.status === 'unknown') continue
     const cur = loadRegistry().find((x) => x.id === g.id)
@@ -2367,6 +2371,42 @@ ipcMain.handle('pick-exe', async () => {
   return res.filePaths[0]
 })
 
+// Игра, которая уже стоит на компьютере (поставлена без лаунчера): игрок указывает её exe, и она
+// попадает в библиотеку как установленная. Папку лаунчер не создавал — и никогда её не удаляет
+// (kind 'external', managed: false): «Удалить» убирает только запись.
+ipcMain.handle('add-local-game', (e, { catalogId, exePath, title } = {}) => {
+  if (!exePath || !fs.existsSync(exePath) || !/\.exe$/i.test(exePath)) return { error: 'Выберите exe игры' }
+  const normExe = path.normalize(exePath).toLowerCase()
+  if (!pickedExePaths.has(normExe)) return { error: 'Выберите exe через окно выбора файла' }
+  if (installerModule.isInstallerStub(exePath)) {
+    return { error: 'Это установщик, а не сама игра. Установите игру и укажите exe из папки, куда она установлена.' }
+  }
+  const list = loadRegistry()
+  const cid = Number(catalogId) || 0
+  if (cid && list.some((g) => Number(g.catalogId) === cid && g.exePath)) {
+    return { error: 'Эта игра уже есть среди установленных' }
+  }
+  if (list.some((g) => g.exePath && path.normalize(g.exePath).toLowerCase() === normExe)) {
+    return { error: 'Этот exe уже привязан к другой игре в библиотеке' }
+  }
+  const installPath = findGameRootFromExe(exePath) || path.dirname(exePath)
+  const entry = {
+    id: 'local:' + crypto.createHash('md5').update(normExe).digest('hex').slice(0, 16),
+    catalogId: cid,
+    name: String(title || '').trim() || path.basename(installPath),
+    ...(title ? { title: String(title).trim().slice(0, 200) } : {}),
+    installPath,
+    exePath,
+    kind: 'external',
+    managed: false,
+    installedAt: Date.now(),
+    playtimeMs: 0,
+  }
+  registerGame(entry)
+  sendInstallProgress({ gameId: entry.id, catalogId: cid, phase: 'done', percent: 100 })
+  return { ok: true, entry }
+})
+
 // Привязать выбранный exe к установленной игре
 ipcMain.handle('set-game-exe', (e, id, exePath) => {
   const list = loadRegistry()
@@ -2404,6 +2444,8 @@ ipcMain.handle('create-shortcut', (e, id) => {
 // это папка выбранного exe — например, Рабочий стол целиком.
 function canDeleteInstallPath(entry) {
   if (!entry?.installPath || isProtectedPath(entry.installPath, protectedDownloadDirs())) return false
+  // игра, добавленная игроком со своего диска: её файлы лаунчер не трогает никогда
+  if (entry.kind === 'external') return false
   if (entry.managed) return true
   // старые записи без пометки: только папки внутри папки игр лаунчера (в том числе прежней)
   return entry.kind !== 'installer' &&
@@ -2477,7 +2519,7 @@ ipcMain.handle('install-from-setup', async (e, id) => {
         const exePath = rankGameExecutable(target, name)
         const crack = exePath ? await resolveCrack(target, [source]) : null
         const keepSetup = !exePath || crack?.status === 'steam-only' || crack?.status === 'choose'
-        const { setupPath: _s, sourcePath: _p, crackMissing: _c, crackOptions: _o, crackChecked: _k, ...rest } = entry
+        const { setupPath: _s, sourcePath: _p, crackMissing: _c, crackOptions: _o, crackChecked: _k, needsSetup: _n, ...rest } = entry
         registerGame({
           ...rest, installPath: target, managed: true, exePath, kind: 'installer', silent: true,
           ...(keepSetup ? { sourcePath: source, setupPath: entry.setupPath } : {}),

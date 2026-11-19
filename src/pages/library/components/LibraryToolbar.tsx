@@ -1,3 +1,4 @@
+import { HardDrive } from 'lucide-react';
 export type LibraryTab = 'all' | 'installed' | 'favorites' | 'collections';
 
 interface Props {
@@ -9,6 +10,8 @@ interface Props {
   pageSize: number;
   onChangePageSize: (size: number) => void;
   onOpenDownloads: () => void;
+  /** «Добавить игру с ПК» — только в лаунчере */
+  onAddLocal?: () => void;
 }
 
 const LibraryToolbar = ({
@@ -20,6 +23,7 @@ const LibraryToolbar = ({
   pageSize,
   onChangePageSize,
   onOpenDownloads,
+  onAddLocal,
 }: Props) => (
   <>
     <div className="tl-sec-head">
@@ -48,6 +52,17 @@ const LibraryToolbar = ({
           Загрузки
         </button>
       </div>
+
+      {onAddLocal && (
+        <button
+          type="button"
+          className="tl-btn ghost shrink-0"
+          onClick={onAddLocal}
+          title="Игра уже установлена на компьютере без лаунчера — укажите её exe"
+        >
+          <HardDrive size={14} /> Добавить игру с ПК
+        </button>
+      )}
 
       {/* поиск и размер страницы относятся к списку игр — на вкладке коллекций не нужны */}
       {filter !== 'collections' && (
