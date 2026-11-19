@@ -20,7 +20,7 @@ const when = (iso: string) => {
  * Разобрать ответ запуска. true — игра запущена.
  * Если Защитник убрал файлы игры — объясняем и предлагаем открыть журнал защиты или запустить как есть.
  */
-export async function handleLaunchResult(id: string, res: LaunchResult, dlg: Dialogs): Promise<boolean> {
+export async function handleLaunchResult(res: LaunchResult, dlg: Dialogs): Promise<boolean> {
   if (res?.defenderRemoved?.length) {
     const list = res.defenderRemoved
       .slice(0, 5)
@@ -55,5 +55,5 @@ export async function handleLaunchResult(id: string, res: LaunchResult, dlg: Dia
 /** Запустить игру и показать понятное окно, если не вышло. true — запущена. */
 export async function launchGameWithChecks(id: string, dlg: Dialogs): Promise<boolean> {
   const res = (await electron()?.launchGame?.(id)) as LaunchResult;
-  return handleLaunchResult(id, res, dlg);
+  return handleLaunchResult(res, dlg);
 }
