@@ -63,7 +63,9 @@ function extractorsFor(isRar) {
 
 const INSTALLER_NAME_RE = /^(setup|install|installer|autorun|redist)([ _\-.]?\d+)?\.(exe|msi|bat|cmd)$/i
 // quicksfv/md5/sfv — утилиты проверки файлов репака (FitGirl кладёт MD5/QuickSFV.EXE рядом с setup.exe)
-const EXE_EXCLUDE_RE = /unins|setup|install|redist|directx|dxsetup|dxweb|vcredist|dotnet|crash|handler|unrar|winrar|7-?zip|7za|readme|autoupdate|unity|unarc|inno|quicksfv|sfv|md5|checksum|verify/i
+// _BE.exe / _EAC.exe — запуск через античит (BattlEye, EasyAntiCheat): без лаунчера издателя не работает
+// (GTA5_Enhanced_BE.exe → «запустите через Rockstar Games Launcher»)
+const EXE_EXCLUDE_RE = /_be\.exe$|_eac\.exe$|^beservice|battleye|easyanticheat|eac_launcher|start_protected_game|unins|setup|install|redist|directx|dxsetup|dxweb|vcredist|dotnet|crash|handler|unrar|winrar|7-?zip|7za|readme|autoupdate|unity|unarc|inno|quicksfv|sfv|md5|checksum|verify/i
 const AUX_LAUNCHER_RE = /multiplayer|online.?fix|freetp|steamfix|coop.?launcher/i
 const VOLUME_RE =/^(.*?)(\.part\d+\.rar|\.\d{3}|\.r\d{2})$/i
 // .iso — образ диска: 7-Zip распаковывает его как архив (ISO 9660 / UDF)
