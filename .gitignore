@@ -54,3 +54,6 @@ src/api/admin.ts
 # Макеты дизайна — только локально, в открытый код и сборки не входят
 design/
 .release-private-stash/
+
+# Собственные версии правовых документов (локальная копия, см. legal-backup/README.md)
+legal-backup/
